@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         暗黑模式 · 大面积文案柔光降白
-// @namespace    https://your-namespace.example.com
-// @version      2.1.1
+// @namespace    https://greasyfork.org/scripts/588400
+// @version      2.1.2
 // @description  压暗大面积正文，支持按网站独立调节亮度，严格保护交互/高亮/代码/黑幕/透明文字
 // @author       Raynon
 // @license      MIT
@@ -27,7 +27,10 @@
 
     // ===== 存储 =====
     function getStorageKey(h) { return 'lightness_' + h; }
-    function getBrightnessForSite(h) { return GM_getValue(getStorageKey(h), DEFAULT_BRIGHTNESS); }
+    function getBrightnessForSite(h) {
+        const v = parseFloat(GM_getValue(getStorageKey(h), DEFAULT_BRIGHTNESS));
+        return Number.isFinite(v) ? Math.min(100, Math.max(10, v)) : DEFAULT_BRIGHTNESS;
+    }
     function setBrightnessForSite(h, val) { GM_setValue(getStorageKey(h), val); }
 
     // ===== 亮度控制 =====
