@@ -18,6 +18,7 @@
     th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #2b2b33; vertical-align: top; }
     th { color: #9aa0a6; font-weight: 600; font-size: 12px; }
     td.case { width: 46%; color: #f5f5f5; }   /* ⚠️ 必须自己声明颜色：否则外层 td 会被压暗，用例再"继承"到灰，测量就不准了（A3） */
+    .clean { color: #f5f5f5; }                 /* 同上，但用类名声明：避免碰到"内联 color + 直接子元素"那条排除规则 */
     td.why { width: 40%; color: #9aa0a6; font-size: 12.5px; }
     .tag { display: inline-block; padding: 1px 7px; border-radius: 99px; font-size: 12px; }
     .tag.dim { background: #3a2f10; color: #f0c674; }
@@ -152,6 +153,11 @@
             <td class="why"><b>已知限制</b>：同上 —— 只有"元素自己声明过颜色"才保得住</td>
             <td><span class="tag limit">会变（已知）</span></td>
         </tr>
+        <tr>
+            <td class="case"><p style="margin:0">正文里的 <code data-expect="limit">裸 code</code>（没自己的颜色）</p></td>
+            <td class="why"><b>已知限制</b>：<code>code</code> 虽在排除列表里，但它自己没声明颜色 ⇒ 会<b>继承</b>外层被压暗的灰（A3）。语法高亮器给 token 上过色的不受影响</td>
+            <td><span class="tag limit">会变（已知）</span></td>
+        </tr>
     </table>
 </div>
 
@@ -232,12 +238,12 @@
             <td><span class="tag keep">保持 / 压暗</span></td>
         </tr>
         <tr>
-            <td class="case"><p style="margin:0">按 <kbd data-expect="keep">Ctrl+S</kbd> 保存；<mark data-expect="keep">高亮 mark</mark> 也保留。</p></td>
+            <td class="case"><p class="clean" style="margin:0">按 <kbd data-expect="keep">Ctrl+S</kbd> 保存；<mark data-expect="keep">高亮 mark</mark> 也保留。</p></td>
             <td class="why">kbd / mark 在排除列表</td>
             <td><span class="tag keep">保持</span></td>
         </tr>
         <tr>
-            <td class="case"><p style="margin:0">行内代码 <code data-expect="keep">const a = 1</code> 与代码块：</p>
+            <td class="case"><p class="clean" style="margin:0">行内代码 <code data-expect="keep">const a = 1</code> 与代码块：</p>
                 <pre data-expect="keep"><span style="color:#ff7b72">const</span> <span style="color:#79c0ff">x</span> = <span style="color:#a5d6ff">42</span>;</pre>
             </td>
             <td class="why">code / pre 连子树排除，保住语法高亮</td>
@@ -293,7 +299,7 @@
     <table>
         <tr><th>用例</th><th>为什么</th><th>期望</th></tr>
         <tr>
-            <td class="case"><p data-expect="dim" style="margin:0">这一段是正文（应压暗）</p><p style="margin:6px 0 0"><em data-expect="keep">强调 em</em> 保留；<strong data-expect="dim">加粗 strong 跟随正文被压暗</strong></p></td>
+            <td class="case"><p data-expect="dim" style="margin:0">这一段是正文（应压暗）</p><p class="clean" style="margin:6px 0 0"><em data-expect="keep">强调 em</em> 保留；<strong data-expect="dim">加粗 strong 跟随正文被压暗</strong></p></td>
             <td class="why">em 是排除项（Google 搜索高亮用它），strong 属正文</td>
             <td><span class="tag keep">混合</span></td>
         </tr>
