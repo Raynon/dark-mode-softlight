@@ -17,7 +17,7 @@
     table { border-collapse: collapse; width: 100%; }
     th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #2b2b33; vertical-align: top; }
     th { color: #9aa0a6; font-weight: 600; font-size: 12px; }
-    td.case { width: 46%; }
+    td.case { width: 46%; color: #f5f5f5; }   /* ⚠️ 必须自己声明颜色：否则外层 td 会被压暗，用例再"继承"到灰，测量就不准了（A3） */
     td.why { width: 40%; color: #9aa0a6; font-size: 12.5px; }
     .tag { display: inline-block; padding: 1px 7px; border-radius: 99px; font-size: 12px; }
     .tag.dim { background: #3a2f10; color: #f0c674; }
@@ -352,6 +352,7 @@
     function probeExcludes(styles) {
         const host = document.createElement('div');
         host.setAttribute('data-probe', '1');
+        host.style.color = '#f5f5f5';        // ⚠️ 外层自己声明颜色，免得探针"继承"到被压暗的灰（A3）
         document.body.appendChild(host);
         const make = (tag, cls, role) => {
             const el = document.createElement(tag);
