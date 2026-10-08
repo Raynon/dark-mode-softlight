@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         暗黑模式 · 大面积文案柔光降白
 // @namespace    https://greasyfork.org/scripts/588400
-// @version      2.1.5
+// @version      2.2.0
 // @description  压暗大面积正文，支持按网站独立调节亮度，严格保护交互/高亮/代码/黑幕/透明文字
 // @author       Raynon
 // @license      MIT
@@ -34,80 +34,60 @@
     }
     function setBrightnessForSite(h, val) { GM_setValue(getStorageKey(h), val); }
 
-    // ===== 亮度控制 =====
-    // 只压"大面积正文容器"。h1–h6 刻意不在列表里：标题是小面积、带层级与站点配色的东西，
-    // 压它会抹掉颜色（2026-10-06 作者决定 T1）—— 判据见 AGENTS.md 顶部"唯一目标"。
+    // 会被压暗的正文容器（标题也在内 —— 站点自己声明过颜色的标题会被 :where() 让给站点）
     const TEXT_SELECTOR = [
         'body', 'div', 'p', 'span', 'li',
-        'td', 'th', 'label', 'strong', 'figcaption', 'blockquote',
-        'dt', 'dd', 'article', 'section', 'main', 'aside'
+        'td', 'strong', 'blockquote', 'dd',
+        'article', 'section', 'main', 'aside',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6'
     ].join(',');
 
-    // ===== 排除列表：这些一律不碰 =====
-    // ⚠️ 排除只是"我们不给它设颜色"，不是保护罩：元素自己没有颜色声明时，仍会继承祖先的颜色 ——
-    // 所以"靠继承取色"的东西，排除救不了（详见 AGENTS.md 的 A3）。
-    const EXCLUDE_BASE = [
-        'a', 'button', 'input', 'textarea', 'em', 'code',
+    // 排除列表：一律不碰（⚠️ 排除不是保护罩 —— 靠继承取色的元素仍会被压灰）
+    const EXCLUDE_TAGS = [
+        // 交互 / 语义
+        'a', 'button', 'input', 'textarea', 'select', 'option', 'optgroup',
+        'em', 'code', 'label', 'summary', 'legend', 'fieldset', 'kbd', 'mark',
+        // 标签型：短、常带站点配色
+        'th', 'dt', 'figcaption', 'nav',
         '.heimu', '[style*="transparent"]', '#' + OVERLAY_ID, '#' + TOAST_ID
     ];
-    // 代码 / 编辑器：保住语法高亮。token 一般自带主题色，把容器整棵子树排除即可恢复。
+    // 代码 / 编辑器：保住语法高亮
     const EXCLUDE_CODE = [
-        'pre', '[contenteditable]',
-        '[class*="editor" i]',   // Monaco（.monaco-editor）/ CodeMirror 6（.cm-editor）/ Ace（.ace_editor）
-        '[class*="mirror" i]',   // CodeMirror 5（.CodeMirror）
-        '[class*="hljs" i]',     // highlight.js
-        '[class*="shiki" i]'     // Shiki
+        'pre', '[contenteditable]', '[class*="editor" i]', '[class*="mirror" i]',
+        '[class*="hljs" i]', '[class*="shiki" i]'
     ];
-    // 强调色：保住站点给的冷暖颜色（颜色词全包）。
-    // 语义词只留警示类 —— success / info / primary 常被当主题或布局类名用，命中会把大片区域一起放过。
+    // div/span 写的 UI（导航、标签页、菜单…）用 role 认，比猜类名可靠
+    const EXCLUDE_ROLES = [
+        'navigation', 'tablist', 'tab', 'menu', 'menubar', 'menuitem', 'menuitemcheckbox',
+        'menuitemradio', 'toolbar', 'tooltip', 'alert', 'status', 'button', 'link',
+        'checkbox', 'radio', 'switch', 'combobox', 'listbox', 'textbox', 'searchbox',
+        'slider', 'spinbutton', 'progressbar', 'meter', 'banner', 'contentinfo', 'log', 'timer'
+    ];
+    // 内联 color：连直接子元素一起护（数值常包在子 span 里）；不用整棵子树，否则外层一个内联色就整页漏压
+    const EXCLUDE_INLINE = ['[style^="color:" i]', '[style*=" color:" i]', '[style*=";color:" i]'];
+    // 关键词兜底：按"词首边界"匹配（子串会误命中 bordered→red）
     const COLOR_WORDS = [
         'red', 'orange', 'amber', 'yellow', 'gold', 'pink', 'rose', 'crimson',
         'purple', 'violet', 'indigo', 'blue', 'sky', 'cyan', 'teal', 'green',
         'emerald', 'lime', 'brown',
         'danger', 'warning', 'warn', 'error', 'hot'
     ];
-    // 标题型类名：站点常用 class 而不是 h1–h6 标签来做标题。
-    // 实测 agedm 的「在线播放」标题就是 <div class="title"> 里的 <span>（红字来自 CSS，不带颜色词），
-    // 只把 h1–h6 移出白名单修不到它 —— 见 AGENTS.md 的 T1 说明。
-    const TITLE_WORDS = ['title'];
-    // 链接型类名：站点也常用 class 而不是 <a> 来做链接。
-    // 实测 scriptcat 面包屑的「当前页名」就是 <span class="ant-breadcrumb-link">（蓝灰来自
-    // --ant-breadcrumb-last-item-color）—— 链接按既定策略一律保持原样，所以这类元素也要放过。
-    const LINK_WORDS = ['link'];
-    // 站点用**内联样式**上的强调色（内联没有 !important）会被我们的 !important 压掉 —— 这是实测踩到的**误压**：
-    // scriptcat 介绍页右侧「数据统计」的三个数字（1.9K 蓝 #1890ff、+14 绿 #52c41a、5.0 橙 #faad14）
-    // 全靠 <div class="ant-statistic-content" style="color:#1890ff;…">，被我们统一抹成 80% 灰。
-    // 这里用**结构**识别（不靠猜名字）：`color:` 出现在开头 / 空格后 / 分号后三种写法都算。
-    // ⚠️ 只护「它自己 + 直接子元素」（` > *`）：值常常包在直接子 <span> 里（antd 就是这样），
-    //    若用整棵子树（` *`），站点在外层随便写一个内联色就会让整页漏压。
-    // ⚠️ 不会误命中 background-color / border-color（"color" 前面是 `-`，不是空格或分号）。
-    const EXCLUDE_INLINE = ['[style^="color:" i]', '[style*=" color:" i]', '[style*=";color:" i]'];
-    // 关键词必须按"词的边界"匹配，不能子串匹配（2.1.3 的教训，2026-10-09 实测）：
-    //   [class*="red" i]  会命中 bordered（borde·red）
-    //   [class*="rose" i] 会命中 prose（p·rose，Tailwind Typography）
-    //   [class*="hot" i]  会命中 photo
-    // 而这些词都带 ` *`（后代）变体 ⇒ 命中一次就把**整块内容**放过：scriptcat 介绍页整篇文章
-    // 因此没被压暗（正文 54/48 字的 p/li 保持 rgb(240,246,252)），页面其它 100 个元素却正常变灰。
-    // 所以每个词展开成 4 个"词首边界"模式，各带 own 与子树两种。
+    const NAME_WORDS = ['link', 'breadcrumb'];            // 链接 / 面包屑：连子树
+    const CHIP_WORDS = ['tag', 'badge'];                  // 标签、角标：只护自己 + 直接子元素
+
     const wordSelector = w => [
-        `[class^="${w}" i]`,        // class="red" / "danger-btn"
-        `[class*=" ${w}" i]`,       // class="btn danger"
-        `[class*="-${w}" i]`,       // class="text-danger" / "bg-red-50" / "ant-tag-lime"
-        `[class*="_${w}" i]`        // class="btn_danger"
+        `[class^="${w}" i]`, `[class*=" ${w}" i]`, `[class*="-${w}" i]`, `[class*="_${w}" i]`
     ];
-    // 每组都连子树一起排除：后代若靠继承取色，只排除元素本身仍会被压灰
     const EXCLUDE = [];
-    EXCLUDE_BASE.concat(EXCLUDE_CODE).forEach(s => EXCLUDE.push(s, s + ' *'));
+    EXCLUDE_TAGS.concat(EXCLUDE_CODE).forEach(s => EXCLUDE.push(s, s + ' *'));
+    const ROLE_SELECTOR = ':is(' + EXCLUDE_ROLES.map(r => `[role="${r}"]`).join(',') + ')';
+    EXCLUDE.push(ROLE_SELECTOR, ROLE_SELECTOR + ' *');
     EXCLUDE_INLINE.forEach(s => EXCLUDE.push(s, s + ' > *'));
-    COLOR_WORDS.concat(TITLE_WORDS, LINK_WORDS).forEach(w => {
-        wordSelector(w).forEach(s => EXCLUDE.push(s, s + ' *'));
-    });
+    CHIP_WORDS.forEach(w => wordSelector(w).forEach(s => EXCLUDE.push(s, s + ' > *')));
+    COLOR_WORDS.concat(NAME_WORDS).forEach(w => wordSelector(w).forEach(s => EXCLUDE.push(s, s + ' *')));
     const EXCLUDE_SELECTOR = EXCLUDE.join(', ');
 
-    // ===== 跨 frame 同步（正文在 iframe 里的站点，例如淘宝首页）=====
-    // 子 frame 的 getPageKey() 与主页面不同（key = origin + pathname），所以"本页是否关闭压暗"
-    // 必须由顶层广播下去，子 frame 才会跟着关；改亮度同样要广播，子 frame 才会立刻重算。
-    // （2.1.3 及以前：只有当前 frame 重跑 apply()，其余 frame 的样式不变，要刷新页面才生效。）
+    // ===== 跨 frame 同步：子 frame 的页面键与主页面不同，状态由顶层广播 =====
     const SYNC_MSG = 'gm-softlight-sync';
     let topOff = null;                      // 由顶层广播而来：true = 主页面已关闭压暗
 
@@ -128,6 +108,7 @@
         apply();                            // apply() 里会把同一个状态继续传给更深的 frame
     });
 
+    // 不用 !important + :where() 降到最低优先级：站点自己声明过颜色的元素一律让它赢
     function apply() {
         document.querySelector('#gm-style-softlight')?.remove();
         const off = isOff();
@@ -139,20 +120,19 @@
         style.id = 'gm-style-softlight';
         style.textContent = `
             @media (prefers-color-scheme: dark) {
-                :root { color: hsl(0, 0%, ${percent}%) !important; }
-                :is(${TEXT_SELECTOR}):not(:is(${EXCLUDE_SELECTOR})) {
-                    color: hsl(0, 0%, ${percent}%) !important;
+                :where(:root) { color: hsl(0, 0%, ${percent}%); }
+                :where(${TEXT_SELECTOR}):not(:where(${EXCLUDE_SELECTOR})) {
+                    color: hsl(0, 0%, ${percent}%);
                 }
             }
         `;
         (document.documentElement || document.head).appendChild(style);
     }
     apply();
-    // 子 frame 可能是脚本初始化之后才创建的，所以顶层再在 load 时补发一次状态
+    // 子 frame 可能是初始化之后才建的：load 时补发一次
     if (window.top === window.self) window.addEventListener('load', () => pushToChildren(isOff()));
 
-    // ===== 一次性提示（用完即弃）=====
-    // 用途：🚫 开关按下后告诉用户"现在是什么状态" —— 否则用户会以为脚本坏了（见 AGENTS.md 的 C7）
+    // ===== 状态提示（1.8 秒后自动消失）=====
     function toast(text) {
         document.getElementById(TOAST_ID)?.remove();
         const el = document.createElement('div');
@@ -231,8 +211,7 @@
         overlay.appendChild(panel);
         (document.body || document.documentElement).appendChild(overlay);
 
-        // 队列清理放在"渲染成功之后"，且只移除这次真的显示出来的 host：
-        // ① 渲染失败时输入不丢（下次点菜单还在）；② 渲染期间迟到登记的 host 仍留到下次（原有累积行为不变）
+        // 只移除"这次真的显示出来"的 host：渲染失败不丢输入，渲染期间迟到登记留到下次
         const shown = new Set(pending);
         GM_setValue(PENDING_KEY, GM_getValue(PENDING_KEY, []).filter(h => !shown.has(h)));
 
@@ -264,10 +243,7 @@
 
     // ===== 菜单：本页压暗开关 =====
     GM_registerMenuCommand('🚫 本页压暗开关', () => {
-        // ⚠️ 只由顶层处理（2026-10-09 实测：淘宝首页有 3 个 frame，菜单点击会送到**每一个** frame，
-        // 各 frame 同时"读-改-写"同一个存储键 ⇒ 互相覆盖：表现是**每次点都提示"已恢复压暗"、关不掉**；
-        // 而且 frame 的 getPageKey() 也不是本页的 key）。
-        // 顶层改完，由 apply() 里的广播把状态带给子 frame（这才是"关掉 frame 里的内容"的正确路径）。
+        // 只由顶层处理：菜单点击会送到每个 frame，抢写存储会互相覆盖
         if (window.top !== window.self) return;
         const list = GM_getValue(EXCLUDED_KEY, []);
         const key = getPageKey();
