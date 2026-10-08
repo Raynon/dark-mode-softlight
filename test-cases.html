@@ -48,16 +48,15 @@
 <body>
 
 <h1>dark-mode-softlight · 用例覆盖测试页</h1>
-<p class="lead">给用户脚本 <code>dark-mode-softlight</code> 用的本地测试页，覆盖"该压 / 不该压"的各类元素。
-<b>长期维护</b>：加了新规则就往对应分类里补一行，并标上期望。</p>
+<p class="lead">给用户脚本 <code>dark-mode-softlight</code> 用的用例覆盖测试页：覆盖"该压 / 不该压"的各类元素，<b>长期维护</b>（加了新规则就往对应分类补一行、并标上期望）。
+在线地址 <code>https://raynon.github.io/dark-mode-softlight/</code>；本地也可以跑：<code>node check-cases.js --serve</code>。</p>
 
 <div class="warn">
     <b>用法（三个前提，缺一个结果就没意义）</b>
     <ol style="margin:6px 0 0 18px;padding:0">
         <li>系统或浏览器必须是<b>深色模式</b>（脚本的规则包在 <code>prefers-color-scheme: dark</code> 里）；</li>
-        <li>必须用 <b>http://</b> 打开本页（<code>file://</code> 不在脚本的 <code>@match *://*/*</code> 里，脚本不会运行）；</li>
-        <li>脚本已安装且<b>本页没被"🚫 开关"关掉</b>（关掉时页面右下角不会再有提示，检查会直接报"没检测到样式"）。</li>
-        <li>用任意静态服务器打开本页即可 —— 仓库里自带的：<code>node check-cases.js --serve</code>（会先静态校验一遍用例，再给出地址）。</li>
+        <li>本页要在 <b>http(s)://</b> 下打开——在线地址见上，或本地 <code>node check-cases.js --serve</code>；<b>直接双击文件不行</b>（<code>file://</code> 不在脚本的 <code>@match *://*/*</code> 里，脚本不会运行）；</li>
+        <li>本页没被脚本的「🚫 本页压暗开关」关掉（否则只会报"没检测到样式"）；<b>没装脚本</b>就加 <code>?auto=1</code>，它会自己抓同目录的脚本源码模拟跑一遍。</li>
     </ol>
 </div>
 
@@ -449,7 +448,20 @@
         return { pass: pass, fail: fail, limit: notes };
     }
 
-    document.getElementById('run').addEventListener('click', runCheck);
+    // ⚠️ 包一层 try/catch：检查代码自己出错时要**显性报错**，不能点了没反应
+    function runCheckSafe() {
+        try {
+            return runCheck();
+        } catch (err) {
+            var rep = document.getElementById('report');
+            rep.innerHTML = '<div class="warn"><b>检查代码自身出错了</b>（跟用户脚本无关）：<br><code>' +
+                esc(err && err.message ? err.message : String(err)) + '</code><br>把这条贴给 agent 即可。</div>';
+            if (window.console) console.error(err);
+            return null;
+        }
+    }
+
+    document.getElementById('run').addEventListener('click', runCheckSafe);
 
     // 没有真脚本注入时（无头浏览器 / 没装脚本 / 只想自检），抓脚本源码自己跑一遍 —— 模拟模式
     function ensureScriptStyle(cb) {
@@ -471,7 +483,7 @@
         window.addEventListener('load', function () {
             setTimeout(function () {
                 ensureScriptStyle(function (mode) {
-                    var r = runCheck() || { pass: 0, fail: 0, limit: 0 };
+                    var r = runCheckSafe() || { pass: 0, fail: 0, limit: 0 };
                     var box = document.createElement('div');
                     box.id = 'auto-result';
                     box.setAttribute('data-mode', mode);
