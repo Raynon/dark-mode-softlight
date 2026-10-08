@@ -348,7 +348,9 @@
     }
 
     // 行为探针：造几个元素，看排除列表到底有没有被浏览器认账
-    function probeExcludes(styles) {
+    function probeExcludes() {
+        const live = [].slice.call(document.querySelectorAll('#gm-style-softlight'));
+        if (!live.length) return [];
         const host = document.createElement('div');
         host.setAttribute('data-probe', '1');
         host.style.color = '#f5f5f5';        // ⚠️ 外层自己声明颜色，免得探针"继承"到被压暗的灰（A3）
@@ -368,11 +370,11 @@
             ['<nav>（应保持）', make('nav')],
             ['<div role="tab">（应保持）', make('div', '', 'tab')],
         ];
-        const parents = styles.map((s) => s.parentNode), saves = styles.map((s) => s.cloneNode(true));
+        const parents = live.map((s) => s.parentNode), saves = live.slice();
         const on = items.map((it) => getComputedStyle(it[1]).color);
-        styles.forEach((s) => s.remove());
+        live.forEach((s) => s.remove());
         const off = items.map((it) => getComputedStyle(it[1]).color);
-        saves.forEach((sv, i) => parents[i].appendChild(sv));
+        saves.forEach((sv, i) => { if (parents[i]) parents[i].appendChild(sv); });
         host.remove();
         return items.map((it, i) => ({ name: it[0], before: off[i], after: on[i], kept: off[i] === on[i] }));
     }
@@ -398,11 +400,12 @@
 
         var els = [].slice.call(document.querySelectorAll('[data-expect]'));
         var parents = styles.map(function (s) { return s.parentNode; });
-        var saves = styles.map(function (s) { return s.cloneNode(true); });
         var on = els.map(function (el) { return getComputedStyle(el).color; });
         styles.forEach(function (s) { s.remove(); });
         var off = els.map(function (el) { return getComputedStyle(el).color; });
-        saves.forEach(function (sv, i) { parents[i].appendChild(sv); });
+        styles.forEach(function (s, i) { if (parents[i]) parents[i].appendChild(s); });
+        // ⚠️ 之后一律用"当前 DOM 里"的样式元素：上面那批虽然还是同一批节点，但为了指纹/探针一致，重新查一次
+        styles = [].slice.call(document.querySelectorAll('#gm-style-softlight'));
 
         var rows = [], pass = 0, fail = 0, notes = 0, dimColor = '';
         els.forEach(function (el, i) {
@@ -438,7 +441,7 @@
             '（排除项全是 ❌ ⇒ 装的不是最新版；只有"方案2 / 不再用 !important"是 ❌ ⇒ 装的是 2.1.5 或更早。）</p>' +
             '<h3 style="margin:18px 0 6px;font-size:15px">行为探针（现场造元素，看排除列表真有没有生效）</h3>' +
             '<table><tr><th>元素</th><th>脚本前</th><th>脚本后</th><th>判定</th></tr>' +
-            probeExcludes(styles).map(function (r) {
+            probeExcludes().map(function (r) {
                 return '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.before) + '</td><td>' + esc(r.after) + '</td><td class="' +
                     (r.kept ? 'ok' : 'bad') + '">' + (r.kept ? '✅ 保持' : '❌ 被改') + '</td></tr>';
             }).join('') +
