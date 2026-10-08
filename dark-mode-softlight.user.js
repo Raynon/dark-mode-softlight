@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         暗黑模式 · 大面积文案柔光降白
 // @namespace    https://greasyfork.org/scripts/588400
-// @version      2.1.3
+// @version      2.1.4
 // @description  压暗大面积正文，支持按网站独立调节亮度，严格保护交互/高亮/代码/黑幕/透明文字
 // @author       Raynon
 // @license      MIT
@@ -22,6 +22,7 @@
     const PENDING_KEY = '__gm_pending_hosts__';
     const EXCLUDED_KEY = '__gm_excluded_pages__';
     const OVERLAY_ID = 'gm-lightness-overlay';
+    const TOAST_ID = 'gm-softlight-toast';
 
     function getPageKey() { return location.origin + location.pathname; }
 
@@ -47,7 +48,7 @@
     // 所以"靠继承取色"的东西，排除救不了（详见 AGENTS.md 的 A3）。
     const EXCLUDE_BASE = [
         'a', 'button', 'input', 'textarea', 'em', 'code',
-        '.heimu', '[style*="transparent"]', '#' + OVERLAY_ID
+        '.heimu', '[style*="transparent"]', '#' + OVERLAY_ID, '#' + TOAST_ID
     ];
     // 代码 / 编辑器：保住语法高亮。token 一般自带主题色，把容器整棵子树排除即可恢复。
     const EXCLUDE_CODE = [
@@ -69,15 +70,57 @@
     // 实测 agedm 的「在线播放」标题就是 <div class="title"> 里的 <span>（红字来自 CSS，不带颜色词），
     // 只把 h1–h6 移出白名单修不到它 —— 见 AGENTS.md 的 T1 说明。
     const TITLE_WORDS = ['title'];
+    // 关键词必须按"词的边界"匹配，不能子串匹配（2.1.3 的教训，2026-10-09 实测）：
+    //   [class*="red" i]  会命中 bordered（borde·red）
+    //   [class*="rose" i] 会命中 prose（p·rose，Tailwind Typography）
+    //   [class*="hot" i]  会命中 photo
+    // 而这些词都带 ` *`（后代）变体 ⇒ 命中一次就把**整块内容**放过：scriptcat 介绍页整篇文章
+    // 因此没被压暗（正文 54/48 字的 p/li 保持 rgb(240,246,252)），页面其它 100 个元素却正常变灰。
+    // 所以每个词展开成 4 个"词首边界"模式，各带 own 与子树两种。
+    const wordSelector = w => [
+        `[class^="${w}" i]`,        // class="red" / "danger-btn"
+        `[class*=" ${w}" i]`,       // class="btn danger"
+        `[class*="-${w}" i]`,       // class="text-danger" / "bg-red-50" / "ant-tag-lime"
+        `[class*="_${w}" i]`        // class="btn_danger"
+    ];
     // 每组都连子树一起排除：后代若靠继承取色，只排除元素本身仍会被压灰
     const EXCLUDE = [];
     EXCLUDE_BASE.concat(EXCLUDE_CODE).forEach(s => EXCLUDE.push(s, s + ' *'));
-    COLOR_WORDS.concat(TITLE_WORDS).forEach(w => EXCLUDE.push(`[class*="${w}" i]`, `[class*="${w}" i] *`));
+    COLOR_WORDS.concat(TITLE_WORDS).forEach(w => {
+        wordSelector(w).forEach(s => EXCLUDE.push(s, s + ' *'));
+    });
     const EXCLUDE_SELECTOR = EXCLUDE.join(', ');
+
+    // ===== 跨 frame 同步（正文在 iframe 里的站点，例如淘宝首页）=====
+    // 子 frame 的 getPageKey() 与主页面不同（key = origin + pathname），所以"本页是否关闭压暗"
+    // 必须由顶层广播下去，子 frame 才会跟着关；改亮度同样要广播，子 frame 才会立刻重算。
+    // （2.1.3 及以前：只有当前 frame 重跑 apply()，其余 frame 的样式不变，要刷新页面才生效。）
+    const SYNC_MSG = 'gm-softlight-sync';
+    let topOff = null;                      // 由顶层广播而来：true = 主页面已关闭压暗
+
+    function pushToChildren(off) {
+        for (let i = 0; i < window.frames.length; i++) {
+            try { window.frames[i].postMessage({ t: SYNC_MSG, off: off }, '*'); } catch (e) {}
+        }
+    }
+
+    function isOff() {
+        if (topOff === true) return true;   // 顶层说关，就跟着关
+        return GM_getValue(EXCLUDED_KEY, []).includes(getPageKey());
+    }
+
+    window.addEventListener('message', e => {
+        if (!e.data || e.data.t !== SYNC_MSG) return;
+        topOff = !!e.data.off;
+        apply();                            // apply() 里会把同一个状态继续传给更深的 frame
+    });
 
     function apply() {
         document.querySelector('#gm-style-softlight')?.remove();
-        if (GM_getValue(EXCLUDED_KEY, []).includes(getPageKey())) return;
+        const off = isOff();
+        if (window.top === window.self) pushToChildren(off);      // 顶层：广播自己的决定
+        else if (topOff !== null) pushToChildren(topOff);         // 子 frame：把顶层的决定往下传
+        if (off) return;
         const percent = getBrightnessForSite(host);
         const style = document.createElement('style');
         style.id = 'gm-style-softlight';
@@ -92,6 +135,22 @@
         (document.documentElement || document.head).appendChild(style);
     }
     apply();
+    // 子 frame 可能是脚本初始化之后才创建的，所以顶层再在 load 时补发一次状态
+    if (window.top === window.self) window.addEventListener('load', () => pushToChildren(isOff()));
+
+    // ===== 一次性提示（用完即弃）=====
+    // 用途：🚫 开关按下后告诉用户"现在是什么状态" —— 否则用户会以为脚本坏了（见 AGENTS.md 的 C7）
+    function toast(text) {
+        document.getElementById(TOAST_ID)?.remove();
+        const el = document.createElement('div');
+        el.id = TOAST_ID;
+        el.textContent = text;
+        el.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;background:rgba(28,28,28,.95);color:#eee;' +
+            'font:13px/1.5 system-ui,-apple-system,sans-serif;padding:8px 12px;border-radius:8px;' +
+            'box-shadow:0 4px 18px rgba(0,0,0,.45);pointer-events:none;transition:opacity .4s;';
+        (document.body || document.documentElement).appendChild(el);
+        setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); }, 1800);
+    }
 
     // ===== 亮度调整浮层 =====
     function showOverlay() {
@@ -110,6 +169,13 @@
         title.textContent = '🌙 文字亮度调整';
         title.style.cssText = 'font-size:16px;font-weight:600;margin-bottom:16px;text-align:center;';
         panel.appendChild(title);
+
+        if (isOff()) {
+            const warn = document.createElement('div');
+            warn.textContent = '⚠️ 本页当前已关闭压暗：这里改的值会存下来，但要先用 🚫 菜单重新开启才会生效';
+            warn.style.cssText = 'font-size:12px;line-height:1.5;color:#f0c674;background:#3a2f10;border-radius:6px;padding:6px 8px;margin-bottom:12px;';
+            panel.appendChild(warn);
+        }
 
         const inputs = [];
         pending.forEach(h => {
@@ -185,6 +251,11 @@
 
     // ===== 菜单：本页压暗开关 =====
     GM_registerMenuCommand('🚫 本页压暗开关', () => {
+        // ⚠️ 只由顶层处理（2026-10-09 实测：淘宝首页有 3 个 frame，菜单点击会送到**每一个** frame，
+        // 各 frame 同时"读-改-写"同一个存储键 ⇒ 互相覆盖：表现是**每次点都提示"已恢复压暗"、关不掉**；
+        // 而且 frame 的 getPageKey() 也不是本页的 key）。
+        // 顶层改完，由 apply() 里的广播把状态带给子 frame（这才是"关掉 frame 里的内容"的正确路径）。
+        if (window.top !== window.self) return;
         const list = GM_getValue(EXCLUDED_KEY, []);
         const key = getPageKey();
         const idx = list.indexOf(key);
@@ -196,5 +267,6 @@
             GM_setValue(EXCLUDED_KEY, list);
         }
         apply();
+        toast(idx === -1 ? '🚫 本页已关闭压暗（再点一次可恢复）' : '✅ 本页已恢复压暗');
     });
 })();
