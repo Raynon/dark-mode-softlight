@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         暗黑模式 · 大面积文案柔光降白
 // @namespace    https://greasyfork.org/scripts/588400
-// @version      2.1.4
+// @version      2.1.5
 // @description  压暗大面积正文，支持按网站独立调节亮度，严格保护交互/高亮/代码/黑幕/透明文字
 // @author       Raynon
 // @license      MIT
@@ -70,6 +70,18 @@
     // 实测 agedm 的「在线播放」标题就是 <div class="title"> 里的 <span>（红字来自 CSS，不带颜色词），
     // 只把 h1–h6 移出白名单修不到它 —— 见 AGENTS.md 的 T1 说明。
     const TITLE_WORDS = ['title'];
+    // 链接型类名：站点也常用 class 而不是 <a> 来做链接。
+    // 实测 scriptcat 面包屑的「当前页名」就是 <span class="ant-breadcrumb-link">（蓝灰来自
+    // --ant-breadcrumb-last-item-color）—— 链接按既定策略一律保持原样，所以这类元素也要放过。
+    const LINK_WORDS = ['link'];
+    // 站点用**内联样式**上的强调色（内联没有 !important）会被我们的 !important 压掉 —— 这是实测踩到的**误压**：
+    // scriptcat 介绍页右侧「数据统计」的三个数字（1.9K 蓝 #1890ff、+14 绿 #52c41a、5.0 橙 #faad14）
+    // 全靠 <div class="ant-statistic-content" style="color:#1890ff;…">，被我们统一抹成 80% 灰。
+    // 这里用**结构**识别（不靠猜名字）：`color:` 出现在开头 / 空格后 / 分号后三种写法都算。
+    // ⚠️ 只护「它自己 + 直接子元素」（` > *`）：值常常包在直接子 <span> 里（antd 就是这样），
+    //    若用整棵子树（` *`），站点在外层随便写一个内联色就会让整页漏压。
+    // ⚠️ 不会误命中 background-color / border-color（"color" 前面是 `-`，不是空格或分号）。
+    const EXCLUDE_INLINE = ['[style^="color:" i]', '[style*=" color:" i]', '[style*=";color:" i]'];
     // 关键词必须按"词的边界"匹配，不能子串匹配（2.1.3 的教训，2026-10-09 实测）：
     //   [class*="red" i]  会命中 bordered（borde·red）
     //   [class*="rose" i] 会命中 prose（p·rose，Tailwind Typography）
@@ -86,7 +98,8 @@
     // 每组都连子树一起排除：后代若靠继承取色，只排除元素本身仍会被压灰
     const EXCLUDE = [];
     EXCLUDE_BASE.concat(EXCLUDE_CODE).forEach(s => EXCLUDE.push(s, s + ' *'));
-    COLOR_WORDS.concat(TITLE_WORDS).forEach(w => {
+    EXCLUDE_INLINE.forEach(s => EXCLUDE.push(s, s + ' > *'));
+    COLOR_WORDS.concat(TITLE_WORDS, LINK_WORDS).forEach(w => {
         wordSelector(w).forEach(s => EXCLUDE.push(s, s + ' *'));
     });
     const EXCLUDE_SELECTOR = EXCLUDE.join(', ');
