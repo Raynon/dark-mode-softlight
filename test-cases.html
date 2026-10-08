@@ -48,18 +48,10 @@
 <body>
 
 <h1>dark-mode-softlight · 用例覆盖测试页</h1>
-<p class="lead"><b>这是 <code>dark-mode-softlight</code> 的效果演示 + 自测页。</b>深色模式下打开它，就能直观看到脚本对各类元素做了什么：每一行都标了<b>期望</b> —— 哪些文字该被压暗（大面积正文、标题），哪些必须保持原样（链接、按钮、导航、面包屑、标签页、角标、代码高亮、黑幕、透明文字、行内强调色……）。
-点下面的「运行检查」会逐条对比"脚本生效前 / 后"的计算色。<br>
-<span class="muted">维护说明：加了新规则就往对应分类补一行、标上 <code>data-expect="dim | keep | limit"</code>；本地也可跑 <code>node check-cases.js --serve</code>。</span></p>
+<p class="lead">每一行都标了<b>期望</b>：哪些文字<b>该被压暗</b>（大面积正文、标题），哪些<b>必须保持原样</b>（链接、按钮、导航、面包屑、标签页、角标、代码高亮、黑幕、透明文字、行内强调色……）。
+点下面的「运行检查」会逐条对比脚本生效前后的计算色。</p>
 
-<div class="warn">
-    <b>用法（三个前提，缺一个结果就没意义）</b>
-    <ol style="margin:6px 0 0 18px;padding:0">
-        <li>系统或浏览器必须是<b>深色模式</b>（脚本的规则包在 <code>prefers-color-scheme: dark</code> 里）；</li>
-        <li>本页要在 <b>http(s)://</b> 下打开——在线地址见上，或本地 <code>node check-cases.js --serve</code>；<b>直接双击文件不行</b>（<code>file://</code> 不在脚本的 <code>@match *://*/*</code> 里，脚本不会运行）；</li>
-        <li>本页没被脚本的「🚫 本页压暗开关」关掉（否则只会报"没检测到样式"）；<b>没装脚本</b>就加 <code>?auto=1</code>，它会自己抓同目录的脚本源码模拟跑一遍。</li>
-    </ol>
-</div>
+<p class="lead">⚠️ 先<b>把系统／浏览器切到深色模式</b>，并确认本页没被脚本的「🚫 本页压暗开关」关掉 —— 否则结果没有意义。</p>
 
 <p><button id="run">▶ 运行检查（对比"脚本生效前 / 后"的计算色）</button>
 <span class="muted">　检查会临时摘掉脚本的 &lt;style&gt;、读一遍原色、再放回去；只读不写。</span></p>
@@ -395,7 +387,7 @@
             return null;
         }
         if (!style) {
-            out.innerHTML = '<div class="warn"><b>没检测到脚本的 &lt;style id="gm-style-softlight"&gt;</b>：脚本没装、没在本页运行（是不是 file:// 打开的？），或者本页被「🚫 本页压暗开关」关掉了。带 <code>?auto=1</code> 打开时会自动抓脚本源码跑一遍（模拟模式）。</div>';
+            out.innerHTML = '<div class="warn"><b>没检测到脚本的 &lt;style id="gm-style-softlight"&gt;</b>：脚本没装、本页没启用，或者本页被「🚫 本页压暗开关」关掉了。</div>';
             return null;
         }
 
@@ -408,16 +400,18 @@
         // ⚠️ 之后一律用"当前 DOM 里"的样式元素：上面那批虽然还是同一批节点，但为了指纹/探针一致，重新查一次
         styles = [].slice.call(document.querySelectorAll('#gm-style-softlight'));
 
-        var rows = [], pass = 0, fail = 0, notes = 0, dimColor = '';
+        var rows = [], pass = 0, fail = 0, notes = 0, dimColor = '', failNames = [];
         els.forEach(function (el, i) {
             var want = el.getAttribute('data-expect'), got = on[i], was = off[i], verdict, cls;
             if (want === DIM) {
                 var okDim = got !== was && isNeutralGray(got);
                 if (okDim) dimColor = dimColor || got;
-                verdict = okDim ? '✅ 已压暗' : '❌ 没被压暗'; cls = okDim ? 'ok' : 'bad'; okDim ? pass++ : fail++;
+                verdict = okDim ? '✅ 已压暗' : '❌ 没被压暗'; cls = okDim ? 'ok' : 'bad';
+                if (okDim) pass++; else { fail++; failNames.push(label(el)); }
             } else if (want === KEEP) {
                 var okKeep = got === was;
-                verdict = okKeep ? '✅ 保持原色' : '❌ 颜色被改'; cls = okKeep ? 'ok' : 'bad'; okKeep ? pass++ : fail++;
+                verdict = okKeep ? '✅ 保持原色' : '❌ 颜色被改'; cls = okKeep ? 'ok' : 'bad';
+                if (okKeep) pass++; else { fail++; failNames.push(label(el)); }
             } else {
                 verdict = 'ℹ️ 已知限制，预期会变'; cls = 'muted'; notes++;
             }
@@ -429,7 +423,7 @@
             '<div class="' + (fail ? 'warn' : 'box') + '"><b>结果：' + pass + ' 通过 / ' + fail + ' 失败</b>' +
             '（另有 ' + notes + ' 条"已知限制"不计入）' +
             (dimColor ? '　当前压暗色 = <code>' + esc(dimColor) + '</code>（可在脚本菜单里改亮度值）' : '') +
-            (fail ? '<br><span class="bad">失败项说明：<b>应压暗</b>的没变灰 ⇒ 它自己/祖先声明了颜色（方案 2 的正常行为，看"为什么"列判断是否可接受）；<b>应保持</b>的被改了 ⇒ 排除规则漏了这一类，请补进脚本。</span>' : '') +
+            (fail ? '<br><span class="bad">应压暗的没变灰 ⇒ 它自己/祖先声明了颜色（正常）；应保持的被改 ⇒ 排除漏了这类。失败清单：</span><br><code>' + esc(failNames.join('　')) + '</code>' : '') +
             '</div>' +
             '<h3 style="margin:18px 0 6px;font-size:15px">注入样式的指纹（判断装的是哪一版 / 排除列表有没有生效）</h3>' +
             (styles.length > 1 ? '<div class="warn"><b>检测到 ' + styles.length + ' 份注入样式</b> ⇒ 脚本管理器里可能装了<b>两个条目</b>（新旧并存），结果会互相干扰，建议先删掉旧条目。</div>' : '') +
@@ -438,8 +432,7 @@
                 return '<tr><td>' + esc(m[0]) + '</td><td class="' + (m[1] ? 'ok' : 'bad') + '">' + (m[1] ? '✅ 有' : '❌ 没有') + '</td></tr>';
             }).join('') +
             '</table>' +
-            '<p class="muted" style="margin:8px 0 0">把上面这张表截图给 agent，就能直接定位"装的是哪一版 / 规则有没有被浏览器认账"。' +
-            '（排除项全是 ❌ ⇒ 装的不是最新版；只有"方案2 / 不再用 !important"是 ❌ ⇒ 装的是 2.1.5 或更早。）</p>' +
+            '<p class="muted" style="margin:8px 0 0">排除项全是 ❌ ⇒ 装的不是最新版；只有"方案2 / 不用 !important"是 ❌ ⇒ 装的是 2.1.5 或更早。</p>' +
             '<h3 style="margin:18px 0 6px;font-size:15px">行为探针（现场造元素，看排除列表真有没有生效）</h3>' +
             '<table><tr><th>元素</th><th>脚本前</th><th>脚本后</th><th>判定</th></tr>' +
             probeExcludes().map(function (r) {
@@ -447,7 +440,7 @@
                     (r.kept ? 'ok' : 'bad') + '">' + (r.kept ? '✅ 保持' : '❌ 被改') + '</td></tr>';
             }).join('') +
             '</table>' +
-            '<p class="muted" style="margin:8px 0 0">对照组 &lt;p&gt; 应该"❌ 被改"（说明脚本确实在工作）；其余 4 个如果也"❌ 被改"，说明<b>排除列表没生效</b>。</p>' +
+            '<p class="muted" style="margin:8px 0 0">对照组 &lt;p&gt; 应该"❌ 被改"；其余 4 个若也"❌ 被改"，说明排除列表没生效。</p>' +
             '<table><tr><th>元素</th><th>期望</th><th>脚本前</th><th>脚本后</th><th>判定</th></tr>' + rows.join('') + '</table>';
         return { pass: pass, fail: fail, limit: notes };
     }
@@ -466,39 +459,6 @@
     }
 
     document.getElementById('run').addEventListener('click', runCheckSafe);
-
-    // 没有真脚本注入时（无头浏览器 / 没装脚本 / 只想自检），抓脚本源码自己跑一遍 —— 模拟模式
-    function ensureScriptStyle(cb) {
-        if (document.getElementById('gm-style-softlight')) { cb('real'); return; }
-        var store = {};
-        window.GM_getValue = function (k, d) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : d; };
-        window.GM_setValue = function (k, v) { store[k] = v; };
-        window.GM_registerMenuCommand = function () {};
-        fetch('dark-mode-softlight.user.js').then(function (r) { return r.text(); }).then(function (src) {
-            var s = document.createElement('script');
-            s.textContent = src;
-            (document.head || document.documentElement).appendChild(s);
-            cb(document.getElementById('gm-style-softlight') ? 'sim' : 'none');
-        }).catch(function () { cb('none'); });
-    }
-
-    // ?auto=1：加载后自动跑一遍，并把结果写成机器可读的一行（无头浏览器用 --dump-dom 取）
-    if (/[?&]auto=1/.test(location.search)) {
-        window.addEventListener('load', function () {
-            setTimeout(function () {
-                ensureScriptStyle(function (mode) {
-                    var r = runCheckSafe() || { pass: 0, fail: 0, limit: 0 };
-                    var box = document.createElement('div');
-                    box.id = 'auto-result';
-                    box.setAttribute('data-mode', mode);
-                    box.textContent = 'AUTO-RESULT pass=' + r.pass + ' fail=' + r.fail + ' limit=' + r.limit + ' mode=' + mode;
-                    var rep = document.getElementById('report');
-                    rep.insertBefore(box, rep.firstChild);
-                    document.title = 'AUTO ' + mode + ' ' + r.pass + '/' + r.fail;
-                });
-            }, 60);
-        });
-    }
 })();
 </script>
 </body>
