@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>dark-mode-softlight · 用例覆盖测试页</title>
+<style>
+    :root { color-scheme: dark; }
+    body {
+        margin: 0; padding: 24px 28px 80px;
+        background: #16161a; color: #f5f5f5;
+        font: 14px/1.7 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    h2 { font-size: 17px; margin: 28px 0 8px; padding-bottom: 6px; border-bottom: 1px solid #333; }
+    p.lead { color: #b9b9c0; margin: 0 0 14px; }
+    .box { border: 1px solid #333; border-radius: 10px; padding: 14px 16px; margin: 10px 0 18px; background: #1c1c22; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #2b2b33; vertical-align: top; }
+    th { color: #9aa0a6; font-weight: 600; font-size: 12px; }
+    td.case { width: 46%; }
+    td.why { width: 40%; color: #9aa0a6; font-size: 12.5px; }
+    .tag { display: inline-block; padding: 1px 7px; border-radius: 99px; font-size: 12px; }
+    .tag.dim { background: #3a2f10; color: #f0c674; }
+    .tag.keep { background: #102f1c; color: #7ee787; }
+    .tag.limit { background: #2f1020; color: #ff9ec4; }
+    .warn { background: #3a2f10; color: #f0c674; border: 1px solid #6b5410; border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
+    .ok { color: #7ee787; } .bad { color: #ff7b72; } .muted { color: #8b949e; }
+    code, pre, kbd { font-family: ui-monospace, Consolas, "Courier New", monospace; }
+    pre { background: #101014; border: 1px solid #2b2b33; border-radius: 8px; padding: 10px; overflow: auto; }
+    a { color: #4ea1ff; }
+    button, input, textarea, select { color: #f5f5f5; background: #26262e; border: 1px solid #444; border-radius: 6px; padding: 4px 8px; font: inherit; }
+    .heimu { background: #000; color: #000; }
+    .monaco-editor { background: #101014; padding: 8px; border-radius: 6px; }
+    nav.demo-nav, .breadcrumb-demo { padding: 6px 10px; border: 1px dashed #444; border-radius: 8px; margin: 6px 0; }
+    .own-color { color: #4ea1ff; }
+    .own-color-heading { color: #ffb454; }
+    .text-red-500 { color: #f87171; }
+    .text-danger { color: #e5484d; }
+    .badge-demo { background: #26262e; border-radius: 99px; padding: 1px 8px; }
+    .muted-wrap { color: #8b949e; }
+    .video-info-title { border: 1px dashed #444; border-radius: 8px; padding: 6px 10px; margin: 6px 0; }
+    .colored-box { color: #c792ea; border: 1px dashed #444; border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
+    #report { margin-top: 14px; }
+    #report table td { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+    #run { cursor: pointer; background: #3b6fd4; border-color: #3b6fd4; padding: 7px 14px; }
+</style>
+</head>
+<body>
+
+<h1>dark-mode-softlight · 用例覆盖测试页</h1>
+<p class="lead">给用户脚本 <code>dark-mode-softlight</code> 用的本地测试页，覆盖"该压 / 不该压"的各类元素。
+<b>长期维护</b>：加了新规则就往对应分类里补一行，并标上期望。</p>
+
+<div class="warn">
+    <b>用法（三个前提，缺一个结果就没意义）</b>
+    <ol style="margin:6px 0 0 18px;padding:0">
+        <li>系统或浏览器必须是<b>深色模式</b>（脚本的规则包在 <code>prefers-color-scheme: dark</code> 里）；</li>
+        <li>必须用 <b>http://</b> 打开本页（<code>file://</code> 不在脚本的 <code>@match *://*/*</code> 里，脚本不会运行）；</li>
+        <li>脚本已安装且<b>本页没被"🚫 开关"关掉</b>（关掉时页面右下角不会再有提示，检查会直接报"没检测到样式"）。</li>
+        <li>用任意静态服务器打开本页即可 —— 仓库里自带的：<code>node check-cases.js --serve</code>（会先静态校验一遍用例，再给出地址）。</li>
+    </ol>
+</div>
+
+<p><button id="run">▶ 运行检查（对比"脚本生效前 / 后"的计算色）</button>
+<span class="muted">　检查会临时摘掉脚本的 &lt;style&gt;、读一遍原色、再放回去；只读不写。</span></p>
+<div id="report"></div>
+
+<h2>① 正文：应被压暗</h2>
+<div class="box">
+    <table>
+        <tr><th>用例</th><th>为什么</th><th>期望</th></tr>
+        <tr>
+            <td class="case"><p data-expect="dim">普通段落：没有自己的颜色声明，颜色继承自 body。</p></td>
+            <td class="why">典型的"大面积白字"，脚本的目标</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><div data-expect="dim">普通 div 里的文字，同样没有自己的颜色声明。</div></td>
+            <td class="why">同上，div 也是白名单里的正文容器</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><ul style="margin:0;padding-left:18px"><li data-expect="dim">列表项文字（li）</li></ul></td>
+            <td class="why">li 在白名单里</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><blockquote data-expect="dim" style="margin:0;padding-left:10px;border-left:3px solid #444">引用块里的正文。</blockquote></td>
+            <td class="why">blockquote 在白名单里</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><h1 data-expect="dim" style="font-size:20px;margin:4px 0">H1 标题（自己没有颜色声明）</h1></td>
+            <td class="why">2.2.0 起标题回到白名单：没自己颜色的标题应被压暗</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><h2 data-expect="dim" style="font-size:17px;margin:4px 0">H2 小节标题（自己没有颜色声明）</h2></td>
+            <td class="why">同上，就是"文章内大号标题"那个诉求</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><table style="width:auto"><tr><td data-expect="dim">表格正文单元格</td></tr></table></td>
+            <td class="why">td 在白名单里（th 已在排除列表）</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+    </table>
+</div>
+
+<h2>② 站点自己声明了颜色：应保持原样</h2>
+<div class="box">
+    <table>
+        <tr><th>用例</th><th>为什么</th><th>期望</th></tr>
+        <tr>
+            <td class="case"><p class="own-color" data-expect="keep">类名声明颜色（.own-color → #4ea1ff）</p></td>
+            <td class="why">方案 2：站点用类名声明过颜色，选择器优先级赢过脚本</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><h3 class="own-color-heading" data-expect="keep" style="margin:4px 0;font-size:16px">H3 标题（站点点名给了橙色）</h3></td>
+            <td class="why">标题自己声明颜色 ⇒ 保住（B站视频标题就是这种）</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p data-expect="keep" style="color:#7ee787;margin:0">内联样式写的颜色（style="color:#7ee787"）</td>
+            <td class="why">内联声明永远赢（含 2.1.5 之前的 !important 时代）</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case">
+                <div style="color:#1890ff;font-variant-numeric:tabular-nums" data-expect="keep">
+                    <span data-expect="keep">1.9K</span>
+                </div>
+            </td>
+            <td class="why">"内联色 + 直接子元素"：antd 统计数字就长这样，父子都要保住</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p class="text-danger" data-expect="keep">.text-danger（关键词 danger）</td>
+            <td class="why">颜色词 / 警示词关键词，词首边界匹配</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p class="text-red-500" data-expect="keep">.text-red-500（Tailwind 风格）</td>
+            <td class="why">颜色词 red，边界是连字符</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><span class="badge-demo" data-expect="keep">角标 badge</span></td>
+            <td class="why">关键词 badge / tag：只护自己 + 直接子元素</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><div class="muted-wrap">外层 .muted-wrap（#8b949e），<span data-expect="limit">里面的 span 没有自己的颜色</span></div></td>
+            <td class="why"><b>已知限制</b>：span 靠继承取色 ⇒ 会被改成 80% 灰（比原色更亮）。纯 CSS 分不出"比 N% 暗"</td>
+            <td><span class="tag limit">会变（已知）</span></td>
+        </tr>
+        <tr>
+            <td class="case"><div class="colored-box">外层 .colored-box（#c792ea），<span data-expect="limit">里面的 span 没有自己的颜色</span></div></td>
+            <td class="why"><b>已知限制</b>：同上 —— 只有"元素自己声明过颜色"才保得住</td>
+            <td><span class="tag limit">会变（已知）</span></td>
+        </tr>
+    </table>
+</div>
+
+<h2>③ 语义 / 功能元素与结构性排除：应保持原样</h2>
+<div class="box">
+    <table>
+        <tr><th>用例</th><th>为什么</th><th>期望</th></tr>
+        <tr>
+            <td class="case"><a href="#" data-expect="keep">普通链接 &lt;a&gt;</a>　<button data-expect="keep">按钮</button></td>
+            <td class="why">标签级排除（a / button）</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><input data-expect="keep" value="输入框">　<textarea data-expect="keep" rows="1">文本域</textarea></td>
+            <td class="why">表单控件标签级排除</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><label data-expect="keep"><input type="checkbox"> 表单标签 label</label>　<select data-expect="keep"><option>下拉选项</option></select></td>
+            <td class="why">label / select / option 在排除列表（2.2.0 新增 label）</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><details open><summary data-expect="keep">summary（details 的标题，可点）</summary><p data-expect="dim">details 里的正文应该被压暗</p></details></td>
+            <td class="why">summary 是功能性标签；里面的正文仍属正文</td>
+            <td><span class="tag keep">保持 / 压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><nav class="demo-nav" data-expect="keep">导航条（&lt;nav&gt;）：首页 / 分区 / 动态</nav></td>
+            <td class="why">2.2.0 起 &lt;nav&gt; 连子树排除（面包屑、导航栏都在这类）</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><div class="breadcrumb-demo" data-expect="keep">面包屑（div 写的，类名含 breadcrumb）：首页 / 脚本市场 / 当前页</div></td>
+            <td class="why">关键词 breadcrumb 兜底（不是 &lt;nav&gt; 的情况）</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case">
+                <div role="navigation" data-expect="keep">role="navigation" 的导航（div 写的）</div>
+            </td>
+            <td class="why">ARIA role 组，覆盖 div/span 写的 UI</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case">
+                <div role="tablist"><div role="tab" data-expect="keep" class="own-color">激活标签（role=tab，站点给了蓝色）</div></div>
+            </td>
+            <td class="why">role=tablist / tab 连子树排除；颜色由站点声明 ⇒ 双保险</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><div role="menu"><div role="menuitem" data-expect="keep">菜单项（role=menuitem）</div></div></td>
+            <td class="why">role 组覆盖菜单</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><div role="toolbar" data-expect="keep">工具条（role=toolbar）</div>　<span role="tooltip" data-expect="keep">提示气泡（role=tooltip）</span></td>
+            <td class="why">role 组覆盖工具条 / 提示</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case">
+                <table style="width:auto">
+                    <tr><th data-expect="keep">表头 th</th><th data-expect="keep">表头 th</th></tr>
+                    <tr><td data-expect="dim">表格正文</td><td data-expect="dim">表格正文</td></tr>
+                </table>
+            </td>
+            <td class="why">th 在排除列表（2.2.0 起），td 仍是正文</td>
+            <td><span class="tag keep">保持 / 压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case">
+                <dl style="margin:0"><dt data-expect="keep">术语 dt</dt><dd data-expect="dim">定义 dd（正文）</dd></dl>
+                <figure style="margin:6px 0 0"><figcaption data-expect="keep">图注 figcaption</figcaption></figure>
+            </td>
+            <td class="why">dt / figcaption 在排除列表（标签型、短）</td>
+            <td><span class="tag keep">保持 / 压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p style="margin:0">按 <kbd data-expect="keep">Ctrl+S</kbd> 保存；<mark data-expect="keep">高亮 mark</mark> 也保留。</p></td>
+            <td class="why">kbd / mark 在排除列表</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p style="margin:0">行内代码 <code data-expect="keep">const a = 1</code> 与代码块：</p>
+                <pre data-expect="keep"><span style="color:#ff7b72">const</span> <span style="color:#79c0ff">x</span> = <span style="color:#a5d6ff">42</span>;</pre>
+            </td>
+            <td class="why">code / pre 连子树排除，保住语法高亮</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><div class="monaco-editor" data-expect="keep">编辑器容器（class 含 editor）<br><span style="color:#d2a8ff">彩色 token</span></div></td>
+            <td class="why">[class*="editor"] 连子树排除（Monaco / CodeMirror / Ace）</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><div contenteditable data-expect="keep">可编辑区域 contenteditable</div></td>
+            <td class="why">[contenteditable] 排除</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p style="margin:0"><span class="heimu" data-expect="keep">黑幕文字</span>　<span style="color:transparent" data-expect="keep">透明文字</span></p></td>
+            <td class="why">.heimu 与"style 含 transparent"一贯排除</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><span class="nav-link" data-expect="keep">类名做的链接（.nav-link）</span>　<span class="tag-demo badge-demo" data-expect="keep">标签 tag</span></td>
+            <td class="why">关键词 link / tag / badge（词首边界；tag/badge 只护自己+直接子元素）</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+    </table>
+</div>
+
+<h2>④ 不再被"标题"关键词放过：这些应被压暗</h2>
+<div class="box">
+    <table>
+        <tr><th>用例</th><th>为什么</th><th>期望</th></tr>
+        <tr>
+            <td class="case"><div class="video-info-title"><div><h1 data-expect="dim" style="font-size:18px;margin:2px 0">标题区里的 h1（没自己颜色）</h1></div></div></td>
+            <td class="why">2.2.0 去掉了 <code>title</code> 关键词（旧 T1 的遗留）；B站那类 <code>.video-info-title</code> 不再整块放过</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><div class="video-info-title"><p data-expect="dim" style="margin:2px 0">标题区里的普通段落（没自己颜色）</p></div></td>
+            <td class="why">同上：只有"站点自己声明过颜色"才保得住</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><div class="video-info-title" style="color:#ffb454"><p data-expect="limit" style="margin:2px 0">标题区声明了颜色，里面的 p 没有</p></div></td>
+            <td class="why"><b>已知限制</b>：只有外层声明颜色 ⇒ 内层仍会被压成 80% 灰</td>
+            <td><span class="tag limit">会变（已知）</span></td>
+        </tr>
+    </table>
+</div>
+
+<h2>⑤ 回归：不该被误伤的老案例</h2>
+<div class="box">
+    <table>
+        <tr><th>用例</th><th>为什么</th><th>期望</th></tr>
+        <tr>
+            <td class="case"><p data-expect="dim" style="margin:0">这一段是正文（应压暗）</p><p style="margin:6px 0 0"><em data-expect="keep">强调 em</em> 保留；<strong data-expect="dim">加粗 strong 跟随正文被压暗</strong></p></td>
+            <td class="why">em 是排除项（Google 搜索高亮用它），strong 属正文</td>
+            <td><span class="tag keep">混合</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p data-expect="dim" style="margin:0">含 <a href="#" data-expect="keep">链接</a> 的正文段落：段落压暗、链接保持</p></td>
+            <td class="why">同一段里两者表现不同，是脚本的正常行为</td>
+            <td><span class="tag keep">混合</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p class="text-danger" data-expect="keep" style="margin:0">红色强调字保持</p><p data-expect="dim" style="margin:0">紧接着的正文被压暗</p></td>
+            <td class="why">强调色保住的经典案例</td>
+            <td><span class="tag keep">混合</span></td>
+        </tr>
+    </table>
+</div>
+
+<script>
+(function () {
+    'use strict';
+    var DIM = 'dim', KEEP = 'keep', LIMIT = 'limit';
+
+    function isNeutralGray(c) {
+        var m = /rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(c);
+        if (!m) return false;
+        var r = +m[1], g = +m[2], b = +m[3];
+        return Math.abs(r - g) <= 2 && Math.abs(g - b) <= 2;
+    }
+
+    function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]; }); }
+
+    function label(el) {
+        var t = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 28);
+        return '<' + el.tagName.toLowerCase() + (el.className ? '.' + String(el.className).split(/\s+/)[0] : '') + '> ' + esc(t);
+    }
+
+    function runCheck() {
+        var out = document.getElementById('report');
+        var style = document.getElementById('gm-style-softlight');
+
+        if (!window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            out.innerHTML = '<div class="warn"><b>当前不是深色模式</b>，脚本的规则不生效，"应压暗"用例必然全部失败。请先把系统或浏览器切到深色模式再跑。</div>';
+            return null;
+        }
+        if (!style) {
+            out.innerHTML = '<div class="warn"><b>没检测到脚本的 &lt;style id="gm-style-softlight"&gt;</b>：脚本没装、没在本页运行（是不是 file:// 打开的？），或者本页被「🚫 本页压暗开关」关掉了。带 <code>?auto=1</code> 打开时会自动抓脚本源码跑一遍（模拟模式）。</div>';
+            return null;
+        }
+
+        var els = [].slice.call(document.querySelectorAll('[data-expect]'));
+        var parent = style.parentNode;
+        var on = els.map(function (el) { return getComputedStyle(el).color; });
+        var saved = style.cloneNode(true);
+        style.remove();
+        var off = els.map(function (el) { return getComputedStyle(el).color; });
+        parent.appendChild(saved);
+
+        var rows = [], pass = 0, fail = 0, notes = 0, dimColor = '';
+        els.forEach(function (el, i) {
+            var want = el.getAttribute('data-expect'), got = on[i], was = off[i], verdict, cls;
+            if (want === DIM) {
+                var okDim = got !== was && isNeutralGray(got);
+                if (okDim) dimColor = dimColor || got;
+                verdict = okDim ? '✅ 已压暗' : '❌ 没被压暗'; cls = okDim ? 'ok' : 'bad'; okDim ? pass++ : fail++;
+            } else if (want === KEEP) {
+                var okKeep = got === was;
+                verdict = okKeep ? '✅ 保持原色' : '❌ 颜色被改'; cls = okKeep ? 'ok' : 'bad'; okKeep ? pass++ : fail++;
+            } else {
+                verdict = 'ℹ️ 已知限制，预期会变'; cls = 'muted'; notes++;
+            }
+            rows.push('<tr><td>' + label(el) + '</td><td>' + esc(want) + '</td><td>' + esc(was) + '</td><td>' + esc(got) +
+                '</td><td class="' + cls + '">' + verdict + '</td></tr>');
+        });
+
+        out.innerHTML =
+            '<div class="' + (fail ? 'warn' : 'box') + '"><b>结果：' + pass + ' 通过 / ' + fail + ' 失败</b>' +
+            '（另有 ' + notes + ' 条"已知限制"不计入）' +
+            (dimColor ? '　当前压暗色 = <code>' + esc(dimColor) + '</code>（可在脚本菜单里改亮度值）' : '') +
+            (fail ? '<br><span class="bad">失败项说明：<b>应压暗</b>的没变灰 ⇒ 它自己/祖先声明了颜色（方案 2 的正常行为，看"为什么"列判断是否可接受）；<b>应保持</b>的被改了 ⇒ 排除规则漏了这一类，请补进脚本。</span>' : '') +
+            '</div>' +
+            '<table><tr><th>元素</th><th>期望</th><th>脚本前</th><th>脚本后</th><th>判定</th></tr>' + rows.join('') + '</table>';
+        return { pass: pass, fail: fail, limit: notes };
+    }
+
+    document.getElementById('run').addEventListener('click', runCheck);
+
+    // 没有真脚本注入时（无头浏览器 / 没装脚本 / 只想自检），抓脚本源码自己跑一遍 —— 模拟模式
+    function ensureScriptStyle(cb) {
+        if (document.getElementById('gm-style-softlight')) { cb('real'); return; }
+        var store = {};
+        window.GM_getValue = function (k, d) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : d; };
+        window.GM_setValue = function (k, v) { store[k] = v; };
+        window.GM_registerMenuCommand = function () {};
+        fetch('dark-mode-softlight.user.js').then(function (r) { return r.text(); }).then(function (src) {
+            var s = document.createElement('script');
+            s.textContent = src;
+            (document.head || document.documentElement).appendChild(s);
+            cb(document.getElementById('gm-style-softlight') ? 'sim' : 'none');
+        }).catch(function () { cb('none'); });
+    }
+
+    // ?auto=1：加载后自动跑一遍，并把结果写成机器可读的一行（无头浏览器用 --dump-dom 取）
+    if (/[?&]auto=1/.test(location.search)) {
+        window.addEventListener('load', function () {
+            setTimeout(function () {
+                ensureScriptStyle(function (mode) {
+                    var r = runCheck() || { pass: 0, fail: 0, limit: 0 };
+                    var box = document.createElement('div');
+                    box.id = 'auto-result';
+                    box.setAttribute('data-mode', mode);
+                    box.textContent = 'AUTO-RESULT pass=' + r.pass + ' fail=' + r.fail + ' limit=' + r.limit + ' mode=' + mode;
+                    var rep = document.getElementById('report');
+                    rep.insertBefore(box, rep.firstChild);
+                    document.title = 'AUTO ' + mode + ' ' + r.pass + '/' + r.fail;
+                });
+            }, 60);
+        });
+    }
+})();
+</script>
+</body>
+</html>
