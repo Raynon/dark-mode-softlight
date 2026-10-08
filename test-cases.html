@@ -48,8 +48,9 @@
 <body>
 
 <h1>dark-mode-softlight · 用例覆盖测试页</h1>
-<p class="lead">给用户脚本 <code>dark-mode-softlight</code> 用的用例覆盖测试页：覆盖"该压 / 不该压"的各类元素，<b>长期维护</b>（加了新规则就往对应分类补一行、并标上期望）。
-在线地址 <code>https://raynon.github.io/dark-mode-softlight/</code>；本地也可以跑：<code>node check-cases.js --serve</code>。</p>
+<p class="lead"><b>这是 <code>dark-mode-softlight</code> 的效果演示 + 自测页。</b>深色模式下打开它，就能直观看到脚本对各类元素做了什么：每一行都标了<b>期望</b> —— 哪些文字该被压暗（大面积正文、标题），哪些必须保持原样（链接、按钮、导航、面包屑、标签页、角标、代码高亮、黑幕、透明文字、行内强调色……）。
+点下面的「运行检查」会逐条对比"脚本生效前 / 后"的计算色。<br>
+<span class="muted">维护说明：加了新规则就往对应分类补一行、标上 <code>data-expect="dim | keep | limit"</code>；本地也可跑 <code>node check-cases.js --serve</code>。</span></p>
 
 <div class="warn">
     <b>用法（三个前提，缺一个结果就没意义）</b>
