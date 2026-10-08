@@ -332,6 +332,51 @@
 
     function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]; }); }
 
+    // 注入样式的"指纹"：用来判断当前装的是哪一版脚本、排除列表有没有真的生效
+    function fingerprint(css) {
+        const flat = css.replace(/\s+/g, ' ');
+        const marks = [
+            ['方案2（用 :where() 降优先级）', css.indexOf(':where(') >= 0],
+            ['不再用 !important', css.indexOf('!important') < 0],
+            ['h1–h6 在白名单里', /(,|\s)h1(,|\s)/.test(flat)],
+            ['结构排除：nav / 表单标签 / 表头', flat.indexOf('nav, nav *') >= 0 || flat.indexOf('nav *') >= 0],
+            ['ARIA role 组', css.indexOf('[role="tab"]') >= 0],
+            ['内联色 + 直接子元素', css.indexOf('[style^="color:" i] > *') >= 0],
+            ['tag / badge 关键词', css.indexOf('[class^="tag" i] > *') >= 0],
+            ['link / breadcrumb 关键词', css.indexOf('[class^="link" i] *') >= 0 && css.indexOf('breadcrumb" i]') >= 0],
+        ];
+        return marks;
+    }
+
+    // 行为探针：造几个元素，看排除列表到底有没有被浏览器认账
+    function probeExcludes(styles) {
+        const host = document.createElement('div');
+        host.setAttribute('data-probe', '1');
+        document.body.appendChild(host);
+        const make = (tag, cls, role) => {
+            const el = document.createElement(tag);
+            if (cls) el.className = cls;
+            if (role) el.setAttribute('role', role);
+            el.textContent = '探针';
+            host.appendChild(el);
+            return el;
+        };
+        const items = [
+            ['<p>（对照组，应被压暗）', make('p')],
+            ['<button>（应保持）', make('button')],
+            ['<span class="tag-x">（应保持）', make('span', 'tag-x')],
+            ['<nav>（应保持）', make('nav')],
+            ['<div role="tab">（应保持）', make('div', '', 'tab')],
+        ];
+        const parents = styles.map((s) => s.parentNode), saves = styles.map((s) => s.cloneNode(true));
+        const on = items.map((it) => getComputedStyle(it[1]).color);
+        styles.forEach((s) => s.remove());
+        const off = items.map((it) => getComputedStyle(it[1]).color);
+        saves.forEach((sv, i) => parents[i].appendChild(sv));
+        host.remove();
+        return items.map((it, i) => ({ name: it[0], before: off[i], after: on[i], kept: off[i] === on[i] }));
+    }
+
     function label(el) {
         var t = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 28);
         return '<' + el.tagName.toLowerCase() + (el.className ? '.' + String(el.className).split(/\s+/)[0] : '') + '> ' + esc(t);
@@ -339,7 +384,8 @@
 
     function runCheck() {
         var out = document.getElementById('report');
-        var style = document.getElementById('gm-style-softlight');
+        var styles = [].slice.call(document.querySelectorAll('#gm-style-softlight'));
+        var style = styles[0];
 
         if (!window.matchMedia('(prefers-color-scheme: dark)').matches) {
             out.innerHTML = '<div class="warn"><b>当前不是深色模式</b>，脚本的规则不生效，"应压暗"用例必然全部失败。请先把系统或浏览器切到深色模式再跑。</div>';
@@ -351,12 +397,12 @@
         }
 
         var els = [].slice.call(document.querySelectorAll('[data-expect]'));
-        var parent = style.parentNode;
+        var parents = styles.map(function (s) { return s.parentNode; });
+        var saves = styles.map(function (s) { return s.cloneNode(true); });
         var on = els.map(function (el) { return getComputedStyle(el).color; });
-        var saved = style.cloneNode(true);
-        style.remove();
+        styles.forEach(function (s) { s.remove(); });
         var off = els.map(function (el) { return getComputedStyle(el).color; });
-        parent.appendChild(saved);
+        saves.forEach(function (sv, i) { parents[i].appendChild(sv); });
 
         var rows = [], pass = 0, fail = 0, notes = 0, dimColor = '';
         els.forEach(function (el, i) {
@@ -381,6 +427,23 @@
             (dimColor ? '　当前压暗色 = <code>' + esc(dimColor) + '</code>（可在脚本菜单里改亮度值）' : '') +
             (fail ? '<br><span class="bad">失败项说明：<b>应压暗</b>的没变灰 ⇒ 它自己/祖先声明了颜色（方案 2 的正常行为，看"为什么"列判断是否可接受）；<b>应保持</b>的被改了 ⇒ 排除规则漏了这一类，请补进脚本。</span>' : '') +
             '</div>' +
+            '<h3 style="margin:18px 0 6px;font-size:15px">注入样式的指纹（判断装的是哪一版 / 排除列表有没有生效）</h3>' +
+            (styles.length > 1 ? '<div class="warn"><b>检测到 ' + styles.length + ' 份注入样式</b> ⇒ 脚本管理器里可能装了<b>两个条目</b>（新旧并存），结果会互相干扰，建议先删掉旧条目。</div>' : '') +
+            '<table><tr><th>特征</th><th>有没有</th></tr>' +
+            [['注入样式份数（正常为 1）', styles.length === 1]].concat(fingerprint(styles.map(function (s) { return s.textContent; }).join('\n'))).map(function (m) {
+                return '<tr><td>' + esc(m[0]) + '</td><td class="' + (m[1] ? 'ok' : 'bad') + '">' + (m[1] ? '✅ 有' : '❌ 没有') + '</td></tr>';
+            }).join('') +
+            '</table>' +
+            '<p class="muted" style="margin:8px 0 0">把上面这张表截图给 agent，就能直接定位"装的是哪一版 / 规则有没有被浏览器认账"。' +
+            '（排除项全是 ❌ ⇒ 装的不是最新版；只有"方案2 / 不再用 !important"是 ❌ ⇒ 装的是 2.1.5 或更早。）</p>' +
+            '<h3 style="margin:18px 0 6px;font-size:15px">行为探针（现场造元素，看排除列表真有没有生效）</h3>' +
+            '<table><tr><th>元素</th><th>脚本前</th><th>脚本后</th><th>判定</th></tr>' +
+            probeExcludes(styles).map(function (r) {
+                return '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.before) + '</td><td>' + esc(r.after) + '</td><td class="' +
+                    (r.kept ? 'ok' : 'bad') + '">' + (r.kept ? '✅ 保持' : '❌ 被改') + '</td></tr>';
+            }).join('') +
+            '</table>' +
+            '<p class="muted" style="margin:8px 0 0">对照组 &lt;p&gt; 应该"❌ 被改"（说明脚本确实在工作）；其余 4 个如果也"❌ 被改"，说明<b>排除列表没生效</b>。</p>' +
             '<table><tr><th>元素</th><th>期望</th><th>脚本前</th><th>脚本后</th><th>判定</th></tr>' + rows.join('') + '</table>';
         return { pass: pass, fail: fail, limit: notes };
     }
