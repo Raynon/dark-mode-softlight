@@ -19,6 +19,11 @@
     th { color: #9aa0a6; font-weight: 600; font-size: 12px; }
     td.case { width: 46%; color: #f5f5f5; }   /* ⚠️ 必须自己声明颜色：否则外层 td 会被压暗，用例再"继承"到灰，测量就不准了（A3） */
     .clean { color: #f5f5f5; }                 /* 同上，但用类名声明：避免碰到"内联 color + 直接子元素"那条排除规则 */
+    /* ②b 组：站点自己声明的各种亮度色。2.3.0 的判据读**实际渲染色**，所以这里必须用字面色值（不能用 var()） */
+    .lit-fff { color: #ffffff; } .lit-f9fafb { color: #f9fafb; } .lit-f5f5f5 { color: #f5f5f5; }
+    .lit-eee { color: #eeeeee; } .lit-e0e0e0 { color: #e0e0e0; } .lit-dcdcdc { color: #dcdcdc; }
+    .lit-fff8e1 { color: #fff8e1; } .lit-d4d4d4 { color: #d4d4d4; } .lit-ccc { color: #cccccc; }
+    .lit-cfe8ff { color: #cfe8ff; } .lit-ffff00 { color: #ffff00; } .lit-ffd700 { color: #ffd700; }
     td.why { width: 40%; color: #9aa0a6; font-size: 12.5px; }
     .tag { display: inline-block; padding: 1px 7px; border-radius: 99px; font-size: 12px; }
     .tag.dim { background: #3a2f10; color: #f0c674; }
@@ -157,6 +162,69 @@
             <td class="case"><p style="margin:0">正文里的 <code data-expect="limit">裸 code</code>（没自己的颜色）</p></td>
             <td class="why"><b>已知限制</b>：<code>code</code> 虽在排除列表里，但它自己没声明颜色 ⇒ 会<b>继承</b>外层被压暗的灰（A3）。语法高亮器给 token 上过色的不受影响</td>
             <td><span class="tag limit">会变（已知）</span></td>
+        </tr>
+    </table>
+</div>
+
+<h2>②b 站点自己声明成"亮色"的文字（2.3.0：按实际渲染色再兜一遍）</h2>
+<div class="box">
+    <p class="muted" style="margin:0 0 10px">这一组需要 <b>2.3.0+</b>（本地测试版）。用 2.2.0 打开时会整组标"⏭ 跳过"、不计入成败 —— 那版没有这个判据。</p>
+    <table>
+        <tr><th>用例</th><th>为什么</th><th>期望</th></tr>
+        <tr>
+            <td class="case"><h3 class="lit-fff" data-expect="dim" data-need="2.3">站点声明的纯白标题 #fff（知乎那种）</h3></td>
+            <td class="why">2.2.0 放它走（"站点声明过颜色就让位"）；2.3.0 判"实际是亮白" ⇒ 补压</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p class="lit-f9fafb" data-expect="dim" data-need="2.3">#f9fafb 近白正文</p></td>
+            <td class="why">L=0.955、几乎无色调 ⇒ 刺眼</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p class="lit-f5f5f5" data-expect="dim" data-need="2.3">#f5f5f5 常见正文白</p></td>
+            <td class="why">L=0.913 ⇒ 刺眼</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p class="lit-fff8e1" data-expect="dim" data-need="2.3">#fff8e1 暖白</p></td>
+            <td class="why">L=0.938、色度 30 ⇒ 走"极亮容忍一点色偏"那一档</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><span class="lit-eee" data-expect="dim" data-need="2.3">#eeeeee</span> / <span class="lit-e0e0e0" data-expect="dim" data-need="2.3">#e0e0e0</span> / <span class="lit-dcdcdc" data-expect="dim" data-need="2.3">#dcdcdc</span></td>
+            <td class="why">L=0.855 / 0.745 / 0.716，都在 0.70 下限之上 ⇒ 刺眼</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p class="lit-d4d4d4" data-expect="keep" data-need="2.3">#d4d4d4（L=0.658，低于下限）</p></td>
+            <td class="why">比目标灰（0.604）只亮一点 ⇒ 宁可漏压</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p class="lit-ccc" data-expect="keep" data-need="2.3">#cccccc（= 我们压暗后的灰）</p></td>
+            <td class="why">已经达标，不该二次压</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p class="lit-cfe8ff" data-expect="keep" data-need="2.3">#cfe8ff 浅蓝</p></td>
+            <td class="why">L=0.782 够亮，但色度 48 ⇒ 强调色，一律保</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><span class="lit-ffff00" data-expect="keep" data-need="2.3">#ffff00</span> / <span class="lit-ffd700" data-expect="keep" data-need="2.3">#ffd700</span></td>
+            <td class="why">纯黄 L 高达 0.928，但色度 255 ⇒ 强调色，保</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p style="color:#ffffff" data-expect="dim" data-need="2.3">内联声明的纯白正文 #fff</p></td>
+            <td class="why">内联亮白同样是刺眼白：补压时**跳过**"内联 color"那一组排除</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p style="color:#1890ff" data-expect="keep" data-need="2.3">内联声明的强调蓝 #1890ff</p></td>
+            <td class="why">彩色 ⇒ 亮度判定放过（老案例"1.9K 蓝色数字"的等价场景）</td>
+            <td><span class="tag keep">保持</span></td>
         </tr>
     </table>
 </div>
@@ -342,6 +410,7 @@
             ['内联色 + 直接子元素', css.indexOf('[style^="color:" i] > *') >= 0],
             ['tag / badge 关键词', css.indexOf('[class^="tag" i] > *') >= 0],
             ['link / breadcrumb 关键词', css.indexOf('[class^="link" i] *') >= 0 && css.indexOf('breadcrumb" i]') >= 0],
+            ['2.3.0 亮白判据（.gm-softlight-hard）', css.indexOf('.gm-softlight-hard') >= 0],
         ];
         return marks;
     }
@@ -398,6 +467,7 @@
         }
 
         var els = [].slice.call(document.querySelectorAll('[data-expect]'));
+        var hasHard = styles.some(function (s) { return s.textContent.indexOf('gm-softlight-hard') >= 0; });
         var parents = styles.map(function (s) { return s.parentNode; });
         var on = els.map(function (el) { return getComputedStyle(el).color; });
         styles.forEach(function (s) { s.remove(); });
@@ -406,9 +476,14 @@
         // ⚠️ 之后一律用"当前 DOM 里"的样式元素：上面那批虽然还是同一批节点，但为了指纹/探针一致，重新查一次
         styles = [].slice.call(document.querySelectorAll('#gm-style-softlight'));
 
-        var rows = [], pass = 0, fail = 0, notes = 0, dimColor = '', failNames = [];
+        var rows = [], pass = 0, fail = 0, notes = 0, dimColor = '', failNames = [], skipped = 0;
         els.forEach(function (el, i) {
             var want = el.getAttribute('data-expect'), got = on[i], was = off[i], verdict, cls;
+            if (el.getAttribute('data-need') && !hasHard) {          // 当前脚本没有 2.3.0 判据 ⇒ 跳过，不算失败
+                skipped++;
+                rows.push('<tr><td>' + label(el) + '</td><td>' + esc(want) + '</td><td>—</td><td>—</td><td class="muted">⏭ 跳过（需要 2.3.0+）</td></tr>');
+                return;
+            }
             if (want === DIM) {
                 var okDim = got !== was && isNeutralGray(got);
                 if (okDim) dimColor = dimColor || got;
@@ -427,7 +502,8 @@
 
         out.innerHTML =
             '<div class="' + (fail ? 'warn' : 'box') + '"><b>结果：' + pass + ' 通过 / ' + fail + ' 失败</b>' +
-            '（另有 ' + notes + ' 条"已知限制"不计入）' +
+            '（另有 ' + notes + ' 条"已知限制"' + (skipped ? '、' + skipped + ' 条"跳过：需要 2.3.0+"' : '') + '不计入）' +
+            (skipped ? '<br><span class="muted">当前脚本里没有 2.3.0 的亮白判据 ⇒ ②b 组整组跳过（换成 2.3.0 本地测试版再跑就是真正校验）。</span>' : '') +
             (dimColor ? '　当前压暗色 = <code>' + esc(dimColor) + '</code>（可在脚本菜单里改亮度值）' : '') +
             (fail ? '<br><span class="bad">应压暗的没变灰 ⇒ 它自己/祖先声明了颜色（正常）；应保持的被改 ⇒ 排除漏了这类。失败清单：</span><br><code>' + esc(failNames.join('　')) + '</code>' : '') +
             '</div>' +
