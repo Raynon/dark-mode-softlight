@@ -103,6 +103,7 @@ function matchCompound(el, sel) {
         if (op === '^=' && !a.startsWith(b)) return false;
         if (op === '*=' && !a.includes(b)) return false;
         if (op === '$=' && !a.endsWith(b)) return false;
+        if (op === '~=' && !a.split(/\s+/).includes(b)) return false;   // 空格分隔词（2.4.1 起用到）
     }
     for (const g of isGroups) {
         if (!splitTop(g, ',').some((sub) => matchCompound(el, sub))) return false;
@@ -229,7 +230,8 @@ function main(exitOnFail) {
     });
     const { pageRules, cases } = parsePage(fs.readFileSync(PAGE, 'utf8'));
     const hasHard = css.indexOf('.gm-softlight-hard') >= 0;            // 装的这份脚本有没有 2.3.0 判据
-    const hasB2 = css.indexOf('class$="-red"') >= 0;                   // 有没有"词首+词尾双边界"（本地测试版 A）
+    const hasB2 = css.indexOf('class$="-red"') >= 0;                   // 2.4：词首+词尾双边界
+    const hasSp = css.indexOf('class~="') >= 0;                        // 2.4.1：空格分隔词
     // 补压时的跳过列表 = 全部排除项**去掉"内联 color"那一组**（内联亮白也该压）
     const sweepExcludes = excludes.filter((x) => !/\[style[^\]]*color/i.test(x.sel));
 
@@ -256,7 +258,7 @@ function main(exitOnFail) {
             (el.text || '').trim().replace(/\s+/g, ' ').slice(0, 26);
 
         const need = el.attrs['data-need'];
-        const have = need === '2.4' ? hasB2 : hasHard;                 // 2.3 = 亮白判据；2.4 = 关键词双边界
+        const have = { '2.3': hasHard, '2.4': hasB2, '2.4.1': hasSp }[need];   // 2.3 亮白判据 / 2.4 双边界 / 2.4.1 空格分隔词
         if (need && !have) {
             skipped++;
             notes.push('⏭ [skip] ' + name + '（这一版脚本没有 2.3.0 亮白判据）');
