@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         暗黑模式 · 大面积文案柔光降白
 // @namespace    https://greasyfork.org/scripts/588400
-// @version      2.2.0
+// @version      2.3.0
 // @description  压暗大面积正文，支持按网站独立调节亮度，严格保护交互/高亮/代码/黑幕/透明文字
 // @author       Raynon
 // @license      MIT
@@ -87,6 +87,39 @@
     COLOR_WORDS.concat(NAME_WORDS).forEach(w => wordSelector(w).forEach(s => EXCLUDE.push(s, s + ' *')));
     const EXCLUDE_SELECTOR = EXCLUDE.join(', ');
 
+    // ===== 2.3.0 亮白判据（低成本变体）：站点把"标题"声明成亮白时也压一档 =====
+    // 只扫标题类、只在 DOMContentLoaded / load 各跑一次、不装监听器（稳态开销 0）
+    const HARD_CLASS = 'gm-softlight-hard';
+    const HEADING_SELECTOR = 'h1,h2,h3,h4,h5,h6,[role="heading"],[class*="title" i],[class*="heading" i],[class*="headline" i]';
+    const HARD_MAX = 200;
+    // 与 EXCLUDE 同源，只去掉"内联 color"那一组：内联亮白的标题也该压（内联彩色的会被亮度判定放过）
+    const SWEEP_SKIP = EXCLUDE.filter(s => !/\[style[^\]]*color/i.test(s));
+    const SWEEP_SKIP_SELECTOR = SWEEP_SKIP.join(', ');
+
+    // 又亮又几乎没色调才算刺眼：≥0.90 容忍一点色偏；0.70–0.90 要求纯中性（0.70 = 目标灰 0.60 再留一档）
+    function isGlaring(css) {
+        const m = /(\d+(?:\.\d+)?)[,\s]+(\d+(?:\.\d+)?)[,\s]+(\d+(?:\.\d+)?)/.exec(css || '');
+        if (!m) return false;
+        const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+        const L = 0.2126 * lin(+m[1]) + 0.7152 * lin(+m[2]) + 0.0722 * lin(+m[3]);
+        const chroma = Math.max(+m[1], +m[2], +m[3]) - Math.min(+m[1], +m[2], +m[3]);
+        return (L >= 0.9 && chroma <= 40) || (L >= 0.7 && chroma <= 24);
+    }
+    function clearHard() {
+        document.querySelectorAll('.' + HARD_CLASS).forEach(el => el.classList.remove(HARD_CLASS));
+    }
+    function sweepHeadings() {
+        if (isOff()) return;
+        try {
+            const list = document.querySelectorAll(HEADING_SELECTOR);
+            for (let i = 0; i < list.length && i < HARD_MAX; i++) {
+                const el = list[i];
+                if (el.classList.contains(HARD_CLASS)) el.classList.remove(HARD_CLASS);   // 先摘掉自己上次加的
+                if (isGlaring(getComputedStyle(el).color) && !el.matches(SWEEP_SKIP_SELECTOR)) el.classList.add(HARD_CLASS);
+            }
+        } catch (e) { /* 出问题就退回纯 CSS，不影响基础压暗 */ }
+    }
+
     // ===== 跨 frame 同步：子 frame 的页面键与主页面不同，状态由顶层广播 =====
     const SYNC_MSG = 'gm-softlight-sync';
     let topOff = null;                      // 由顶层广播而来：true = 主页面已关闭压暗
@@ -114,7 +147,7 @@
         const off = isOff();
         if (window.top === window.self) pushToChildren(off);      // 顶层：广播自己的决定
         else if (topOff !== null) pushToChildren(topOff);         // 子 frame：把顶层的决定往下传
-        if (off) return;
+        if (off) { clearHard(); return; }
         const percent = getBrightnessForSite(host);
         const style = document.createElement('style');
         style.id = 'gm-style-softlight';
@@ -124,13 +157,17 @@
                 :where(${TEXT_SELECTOR}):not(:where(${EXCLUDE_SELECTOR})) {
                     color: hsl(0, 0%, ${percent}%);
                 }
+                body .${HARD_CLASS} { color: hsl(0, 0%, ${percent}%) !important; }
             }
         `;
         (document.documentElement || document.head).appendChild(style);
+        sweepHeadings();
     }
     apply();
     // 子 frame 可能是初始化之后才建的：load 时补发一次
     if (window.top === window.self) window.addEventListener('load', () => pushToChildren(isOff()));
+    window.addEventListener('DOMContentLoaded', sweepHeadings);
+    window.addEventListener('load', sweepHeadings);
 
     // ===== 状态提示（1.8 秒后自动消失）=====
     function toast(text) {
