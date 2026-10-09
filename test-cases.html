@@ -389,9 +389,10 @@
     // 注入样式的"指纹"：用来判断当前装的是哪一版脚本、排除列表有没有真的生效
     function fingerprint(css) {
         const flat = css.replace(/\s+/g, ' ');
+        const base = /:where\([^)]*\):not\(:where\([\s\S]*?\)\)\s*\{([^}]*)\}/.exec(css);
         const marks = [
             ['方案2（用 :where() 降优先级）', css.indexOf(':where(') >= 0],
-            ['不再用 !important', css.indexOf('!important') < 0],
+            ['基础规则不用 !important（2.3.0 起的定向亮白覆盖除外）', !!base && base[1].indexOf('!important') < 0],
             ['h1–h6 在白名单里', /(,|\s)h1(,|\s)/.test(flat)],
             ['结构排除：nav / 表单标签 / 表头', flat.indexOf('nav, nav *') >= 0 || flat.indexOf('nav *') >= 0],
             ['ARIA role 组', css.indexOf('[role="tab"]') >= 0],
