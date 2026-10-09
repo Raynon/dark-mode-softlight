@@ -200,7 +200,8 @@ function isGlaring(rgb) {
     const chroma = Math.max(rgb[0], rgb[1], rgb[2]) - Math.min(rgb[0], rgb[1], rgb[2]);
     return (L >= 0.9 && chroma <= 40) || (L >= 0.7 && chroma <= 24);
 }
-const SWEEP_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'span', 'li', 'td', 'strong', 'blockquote', 'dd']);
+// 2.3.0 低成本变体：**只扫标题类**（与脚本里的 HEADING_SELECTOR 保持一致；改脚本时这里要同步）
+const SWEEP_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
 function sweepCandidate(el) {
     if (SWEEP_TAGS.has(el.tag)) return true;
     if ((el.attrs.role || '').toLowerCase() === 'heading') return true;
