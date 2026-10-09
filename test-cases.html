@@ -217,6 +217,19 @@
     </table>
 </div>
 
+<h2>②c 关键词边界（本地测试版 A：词首+词尾双边界）</h2>
+    <table>
+        <tr><th>用例</th><th>期望</th></tr>
+        <tr><td class="case"><div class="reduced-bottom-padding"><p data-expect="dim" data-need="2.4">祖先 .reduced-bottom-padding（内含 "reduced"）⇒ 深层正文仍应被压暗</p></div></td><td><span class="tag dim">压暗</span></td></tr>
+        <tr><td class="case"><div class="hotel-card"><p data-expect="dim" data-need="2.4">祖先 .hotel-card（内含 "hot"）⇒ 应被压暗</p></div></td><td><span class="tag dim">压暗</span></td></tr>
+        <tr><td class="case"><div class="bluetooth-panel"><p data-expect="dim" data-need="2.4">祖先 .bluetooth-panel（内含 "blue"）⇒ 应被压暗</p></div></td><td><span class="tag dim">压暗</span></td></tr>
+        <tr><td class="case"><span class="tagline" data-expect="dim" data-need="2.4">元素自身 .tagline（内含 "tag"）⇒ 应被压暗</span></td><td><span class="tag dim">压暗</span></td></tr>
+        <tr><td class="case"><div class="text-red-500"><span data-expect="keep" data-need="2.4">容器 .text-red-500 的直接子元素 ⇒ 保持原样</span></div></td><td><span class="tag keep">保持</span></td></tr>
+        <tr><td class="case"><span class="link__text" data-expect="keep" data-need="2.4">BEM 双下划线 .link__text ⇒ 仍保持原样</span></td><td><span class="tag keep">保持</span></td></tr>
+        <tr><td class="case"><div class="text-red-500"><div><p data-expect="limit" data-need="2.4">两层嵌套（只护直接子元素）⇒ 本次取舍</p></div></div></td><td><span class="tag limit">会变（取舍）</span></td></tr>
+        <tr><td class="case"><p class="form-errors" data-expect="limit" data-need="2.4">复数 .form-errors（本次不再保护）⇒ 已知取舍</p></td><td><span class="tag limit">会变（取舍）</span></td></tr>
+    </table>
+
 <h2>③ 语义 / 功能元素与结构性排除：应保持原样</h2>
 <div class="box">
     <table>
@@ -457,6 +470,8 @@
 
         var els = [].slice.call(document.querySelectorAll('[data-expect]'));
         var hasHard = styles.some(function (s) { return s.textContent.indexOf('gm-softlight-hard') >= 0; });
+        // 本地测试版 A：关键词排除项改成"词首+词尾双边界"（旧版是 [class*=" red" i] 这种只有词首的写法）
+        var hasB2 = styles.some(function (s) { return s.textContent.indexOf('class$="-red"') >= 0; });
         var parents = styles.map(function (s) { return s.parentNode; });
         var on = els.map(function (el) { return getComputedStyle(el).color; });
         styles.forEach(function (s) { s.remove(); });
@@ -468,9 +483,11 @@
         var rows = [], pass = 0, fail = 0, notes = 0, dimColor = '', failNames = [], skipped = 0;
         els.forEach(function (el, i) {
             var want = el.getAttribute('data-expect'), got = on[i], was = off[i], verdict, cls;
-            if (el.getAttribute('data-need') && !hasHard) {          // 当前脚本没有 2.3.0 判据 ⇒ 跳过，不算失败
+            var need = el.getAttribute('data-need');
+            var have = need === '2.4' ? hasB2 : hasHard;             // 2.3 = 亮白判据；2.4 = 关键词双边界
+            if (need && !have) {                                     // 当前脚本没有该能力 ⇒ 跳过，不算失败
                 skipped++;
-                rows.push('<tr><td>' + label(el) + '</td><td>' + esc(want) + '</td><td>—</td><td>—</td><td class="muted">⏭ 跳过（需要 2.3.0+）</td></tr>');
+                rows.push('<tr><td>' + label(el) + '</td><td>' + esc(want) + '</td><td>—</td><td>—</td><td class="muted">⏭ 跳过（需要 ' + esc(need) + '.0+）</td></tr>');
                 return;
             }
             if (want === DIM) {
@@ -491,8 +508,8 @@
 
         out.innerHTML =
             '<div class="' + (fail ? 'warn' : 'box') + '"><b>结果：' + pass + ' 通过 / ' + fail + ' 失败</b>' +
-            '（另有 ' + notes + ' 条"已知限制"' + (skipped ? '、' + skipped + ' 条"跳过：需要 2.3.0+"' : '') + '不计入）' +
-            (skipped ? '<br><span class="muted">当前脚本里没有 2.3.0 的亮白判据 ⇒ ②b 组整组跳过（换成 2.3.0 本地测试版再跑就是真正校验）。</span>' : '') +
+            '（另有 ' + notes + ' 条"已知限制"' + (skipped ? '、' + skipped + ' 条"跳过：当前脚本没有所需能力"' : '') + '不计入）' +
+            (skipped ? '<br><span class="muted">跳过的用例需要更新的脚本：<code>data-need="2.3"</code> 要 2.3.0+ 的亮白判据；<code>data-need="2.4"</code> 要本次「关键词双边界」修复（本地测试版）。</span>' : '') +
             (dimColor ? '　当前压暗色 = <code>' + esc(dimColor) + '</code>（可在脚本菜单里改亮度值）' : '') +
             (fail ? '<br><span class="bad">应压暗的没变灰 ⇒ 它自己/祖先声明了颜色（正常）；应保持的被改 ⇒ 排除漏了这类。失败清单：</span><br><code>' + esc(failNames.join('　')) + '</code>' : '') +
             '</div>' +
