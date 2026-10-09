@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         暗黑模式 · 大面积文案柔光降白
 // @namespace    https://greasyfork.org/scripts/588400
-// @version      2.4.0
+// @version      2.4.1
 // @description  压暗大面积正文，支持按网站独立调节亮度，严格保护交互/高亮/代码/黑幕/透明文字
 // @author       Raynon
 // @license      MIT
@@ -76,9 +76,10 @@
     const NAME_WORDS = ['link', 'breadcrumb'];            // 链接 / 面包屑：连子树
     const CHIP_WORDS = ['tag', 'badge'];                  // 标签、角标：只护自己 + 直接子元素
 
-    // 7 种"完整词"形状：整属性就是该词 / 词+分隔符开头 / 分隔符+词结尾 / 两侧都被分隔符夹住
+    // 7 种"完整词"形状：空格分隔的独立词（class~=，覆盖 "btn red"）/ 词+分隔符开头 / 分隔符+词结尾 / 两侧被分隔符夹住
+    //   一律不做无边界子串：那会把 hundred / bored / credit 也当成 red（2.1.4 之前的老毛病）
     const wordSelector = w => [
-        `[class^="${w}" i][class$="${w}" i]`,
+        `[class~="${w}" i]`,
         `[class^="${w}-" i]`, `[class^="${w}_" i]`,
         `[class$="-${w}" i]`, `[class$="_${w}" i]`,
         `[class*="-${w}-" i]`, `[class*="_${w}_" i]`
@@ -144,6 +145,7 @@
 
     window.addEventListener('message', e => {
         if (!e.data || e.data.t !== SYNC_MSG) return;
+        if (e.source !== window.parent) return;   // 只认父 frame 的广播（顶层 parent 即自己）：第三方 iframe 不能关掉本层压暗
         topOff = !!e.data.off;
         apply();                            // apply() 里会把同一个状态继续传给更深的 frame
     });
