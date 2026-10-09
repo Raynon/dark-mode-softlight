@@ -229,6 +229,7 @@ function main(exitOnFail) {
     });
     const { pageRules, cases } = parsePage(fs.readFileSync(PAGE, 'utf8'));
     const hasHard = css.indexOf('.gm-softlight-hard') >= 0;            // 装的这份脚本有没有 2.3.0 判据
+    const hasB2 = css.indexOf('class$="-red"') >= 0;                   // 有没有"词首+词尾双边界"（本地测试版 A）
     // 补压时的跳过列表 = 全部排除项**去掉"内联 color"那一组**（内联亮白也该压）
     const sweepExcludes = excludes.filter((x) => !/\[style[^\]]*color/i.test(x.sel));
 
@@ -254,7 +255,9 @@ function main(exitOnFail) {
         const name = '<' + el.tag + (el.classes.length ? '.' + el.classes.join('.') : '') + '> ' +
             (el.text || '').trim().replace(/\s+/g, ' ').slice(0, 26);
 
-        if (el.attrs['data-need'] && !hasHard) {
+        const need = el.attrs['data-need'];
+        const have = need === '2.4' ? hasB2 : hasHard;                 // 2.3 = 亮白判据；2.4 = 关键词双边界
+        if (need && !have) {
             skipped++;
             notes.push('⏭ [skip] ' + name + '（这一版脚本没有 2.3.0 亮白判据）');
             continue;
@@ -271,7 +274,7 @@ function main(exitOnFail) {
     }
 
     console.log('用例总数 ' + cases.length + '（其中已知限制 ' + limit + ' 条' +
-        (skipped ? '，跳过 ' + skipped + ' 条：需要 2.3.0+' : '') + '）');
+        (skipped ? '，跳过 ' + skipped + ' 条：当前脚本没有所需能力' : '') + '）');
     console.log('通过 ' + pass + '　失败 ' + fail);
     if (bad.length) { console.log(''); bad.forEach((b) => console.log(b)); }
     if (notes.length && (VERBOSE || fail)) { console.log(''); notes.forEach((n) => console.log(n)); }
