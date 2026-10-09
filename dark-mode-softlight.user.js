@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         暗黑模式 · 大面积文案柔光降白
 // @namespace    https://greasyfork.org/scripts/588400
-// @version      2.3.0
+// @version      2.4.0
 // @description  压暗大面积正文，支持按网站独立调节亮度，严格保护交互/高亮/代码/黑幕/透明文字
 // @author       Raynon
 // @license      MIT
@@ -65,7 +65,8 @@
     ];
     // 内联 color：连直接子元素一起护（数值常包在子 span 里）；不用整棵子树，否则外层一个内联色就整页漏压
     const EXCLUDE_INLINE = ['[style^="color:" i]', '[style*=" color:" i]', '[style*=";color:" i]'];
-    // 关键词兜底：按"词首边界"匹配（子串会误命中 bordered→red）
+    // 关键词兜底：按"词的完整边界"匹配（词首与词尾都必须是分隔符或属性两端）
+    //   只做词首会误命中：reduced→red、hotel→hot、warranty→warn、bluetooth→blue、tagline→tag、linkage→link
     const COLOR_WORDS = [
         'red', 'orange', 'amber', 'yellow', 'gold', 'pink', 'rose', 'crimson',
         'purple', 'violet', 'indigo', 'blue', 'sky', 'cyan', 'teal', 'green',
@@ -75,8 +76,12 @@
     const NAME_WORDS = ['link', 'breadcrumb'];            // 链接 / 面包屑：连子树
     const CHIP_WORDS = ['tag', 'badge'];                  // 标签、角标：只护自己 + 直接子元素
 
+    // 7 种"完整词"形状：整属性就是该词 / 词+分隔符开头 / 分隔符+词结尾 / 两侧都被分隔符夹住
     const wordSelector = w => [
-        `[class^="${w}" i]`, `[class*=" ${w}" i]`, `[class*="-${w}" i]`, `[class*="_${w}" i]`
+        `[class^="${w}" i][class$="${w}" i]`,
+        `[class^="${w}-" i]`, `[class^="${w}_" i]`,
+        `[class$="-${w}" i]`, `[class$="_${w}" i]`,
+        `[class*="-${w}-" i]`, `[class*="_${w}_" i]`
     ];
     const EXCLUDE = [];
     EXCLUDE_TAGS.concat(EXCLUDE_CODE).forEach(s => EXCLUDE.push(s, s + ' *'));
@@ -84,7 +89,9 @@
     EXCLUDE.push(ROLE_SELECTOR, ROLE_SELECTOR + ' *');
     EXCLUDE_INLINE.forEach(s => EXCLUDE.push(s, s + ' > *'));
     CHIP_WORDS.forEach(w => wordSelector(w).forEach(s => EXCLUDE.push(s, s + ' > *')));
-    COLOR_WORDS.concat(NAME_WORDS).forEach(w => wordSelector(w).forEach(s => EXCLUDE.push(s, s + ' *')));
+    // 颜色/语义词：只护自己 + 直接子元素（连整棵子树时，祖先偶然含颜色词就会吃掉一整块内容：Gemini 的 reduced-* 就是这么来的）
+    COLOR_WORDS.forEach(w => wordSelector(w).forEach(s => EXCLUDE.push(s, s + ' > *')));
+    NAME_WORDS.forEach(w => wordSelector(w).forEach(s => EXCLUDE.push(s, s + ' *')));      // 链接 / 面包屑：连子树
     const EXCLUDE_SELECTOR = EXCLUDE.join(', ');
 
     // ===== 2.3.0 亮白判据（低成本变体）：站点把"标题"声明成亮白时也压一档 =====
