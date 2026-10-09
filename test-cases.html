@@ -19,6 +19,9 @@
     th { color: #9aa0a6; font-weight: 600; font-size: 12px; }
     td.case { width: 46%; color: #f5f5f5; }   /* ⚠️ 必须自己声明颜色：否则外层 td 会被压暗，用例再"继承"到灰，测量就不准了（A3） */
     .clean { color: #f5f5f5; }                 /* 同上，但用类名声明：避免碰到"内联 color + 直接子元素"那条排除规则 */
+    /* ②b 组：站点自己声明的各种亮度色。判据读**实际渲染色**，所以用字面色值（不用 var()） */
+    .lit-fff { color: #ffffff; } .lit-e0e0e0 { color: #e0e0e0; } .lit-fff8e1 { color: #fff8e1; }
+    .lit-d4d4d4 { color: #d4d4d4; } .lit-cfe8ff { color: #cfe8ff; } .lit-ffff00 { color: #ffff00; }
     td.why { width: 40%; color: #9aa0a6; font-size: 12.5px; }
     .tag { display: inline-block; padding: 1px 7px; border-radius: 99px; font-size: 12px; }
     .tag.dim { background: #3a2f10; color: #f0c674; }
@@ -157,6 +160,59 @@
             <td class="case"><p style="margin:0">正文里的 <code data-expect="limit">裸 code</code>（没自己的颜色）</p></td>
             <td class="why"><b>已知限制</b>：<code>code</code> 虽在排除列表里，但它自己没声明颜色 ⇒ 会<b>继承</b>外层被压暗的灰（A3）。语法高亮器给 token 上过色的不受影响</td>
             <td><span class="tag limit">会变（已知）</span></td>
+        </tr>
+    </table>
+</div>
+
+<h2>②b 站点把「标题」声明成亮色（2.3.0：只扫标题类）</h2>
+<div class="box">
+    <p class="muted" style="margin:0 0 10px">这一组需要 <b>2.3.0+</b>（本地测试版）；2.2.0 打开时整组标"⏭ 跳过"。本次<b>只治标题</b>：正文里逐元素声明的白字仍按原样保留（见本组最后一条）。</p>
+    <table>
+        <tr><th>用例</th><th>为什么</th><th>期望</th></tr>
+        <tr>
+            <td class="case"><h3 class="lit-fff" data-expect="dim" data-need="2.3">站点声明的纯白标题 #fff（知乎那种）</h3></td>
+            <td class="why">2.2.0 让位给站点 ⇒ 它成了全页最亮的东西；2.3.0 判"实际是亮白" ⇒ 补压</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><h3 class="lit-e0e0e0" data-expect="dim" data-need="2.3">#e0e0e0（L=0.745）</h3></td>
+            <td class="why">在 0.70 下限之上 ⇒ 刺眼</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><h3 class="lit-fff8e1" data-expect="dim" data-need="2.3">#fff8e1 暖白（L=0.938，色度 30）</h3></td>
+            <td class="why">走"极亮容忍一点色偏"那一档</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><h3 class="lit-d4d4d4" data-expect="keep" data-need="2.3">#d4d4d4（L=0.658，低于下限）</h3></td>
+            <td class="why">只比目标灰亮一点 ⇒ 宁可漏压</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><h3 class="lit-cfe8ff" data-expect="keep" data-need="2.3">#cfe8ff 浅蓝（L=0.782，色度 48）</h3></td>
+            <td class="why">亮度够，但有色调 ⇒ 强调色，一律保</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><h3 class="lit-ffff00" data-expect="keep" data-need="2.3">#ffff00 纯黄（L=0.928，色度 255）</h3></td>
+            <td class="why">色度大 ⇒ 强调色，保</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><h3 style="color:#ffffff" data-expect="dim" data-need="2.3">内联声明的纯白标题</h3></td>
+            <td class="why">内联亮白同样刺眼；判据读的是**实际渲染色**</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
+            <td class="case"><h3 style="color:#1890ff" data-expect="keep" data-need="2.3">内联声明的强调蓝标题</h3></td>
+            <td class="why">彩色 ⇒ 判据放过</td>
+            <td><span class="tag keep">保持</span></td>
+        </tr>
+        <tr>
+            <td class="case"><p class="lit-fff" data-expect="limit" data-need="2.3">正文段落声明的纯白（不在"标题"范围内）</p></td>
+            <td class="why"><b>本次不做</b>：低成本变体只扫标题类 ⇒ 逐元素声明白字的正文仍漏压（Tailwind 类站同理）</td>
+            <td><span class="tag limit">仍漏压</span></td>
         </tr>
     </table>
 </div>
@@ -342,6 +398,7 @@
             ['内联色 + 直接子元素', css.indexOf('[style^="color:" i] > *') >= 0],
             ['tag / badge 关键词', css.indexOf('[class^="tag" i] > *') >= 0],
             ['link / breadcrumb 关键词', css.indexOf('[class^="link" i] *') >= 0 && css.indexOf('breadcrumb" i]') >= 0],
+            ['亮白判据（2.3.0 本地测试版才有）', css.indexOf('.gm-softlight-hard') >= 0],
         ];
         return marks;
     }
