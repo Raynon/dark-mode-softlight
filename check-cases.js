@@ -133,8 +133,9 @@ function matchChain(el, chain) {
 
 // ---------- 3. 解析测试页 ----------
 function parsePage(html) {
-    // 3.1 页面自己的 CSS：取出会声明 color 的规则
-    const styleBlocks = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]).join('\n');
+    // 3.1 页面自己的 CSS：先去掉注释（否则注释会被当成选择器的一部分，紧跟注释的那条规则就废了）
+    const styleBlocks = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]).join('\n')
+        .replace(/\/\*[\s\S]*?\*\//g, ' ');
     const pageRules = [];
     for (const m of styleBlocks.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
         if (!/(^|;)\s*color\s*:/.test(m[2])) continue;
@@ -180,6 +181,41 @@ function parsePage(html) {
 }
 
 // ---------- 4. 判定 ----------
+// 2.3.0 亮白判据（与脚本里的 isGlaring / SWEEP_SELECTOR 保持一致；改脚本时这里要同步）
+function parseColor(v) {
+    if (!v) return null;
+    const hex = /#([0-9a-f]{3}|[0-9a-f]{6})\b/i.exec(v);
+    if (hex) {
+        let h = hex[1];
+        if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+        return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+    }
+    const rgb = /rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i.exec(v);
+    return rgb ? [+rgb[1], +rgb[2], +rgb[3]] : null;      // var(--x) 之类解析不了 ⇒ 当作不刺眼
+}
+function isGlaring(rgb) {
+    if (!rgb) return false;
+    const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    const L = 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+    const chroma = Math.max(rgb[0], rgb[1], rgb[2]) - Math.min(rgb[0], rgb[1], rgb[2]);
+    return (L >= 0.9 && chroma <= 40) || (L >= 0.7 && chroma <= 24);
+}
+const SWEEP_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'span', 'li', 'td', 'strong', 'blockquote', 'dd']);
+function sweepCandidate(el) {
+    if (SWEEP_TAGS.has(el.tag)) return true;
+    if ((el.attrs.role || '').toLowerCase() === 'heading') return true;
+    return el.classes.some((c) => /title|heading|headline/i.test(c));
+}
+function hitExcludes(el, list) {
+    return list.some((x) => {
+        if (x.kind === 'self') return matchSelector(el, x.sel);
+        if (x.kind === 'child') return (el.parent && matchSelector(el.parent, x.sel)) || matchSelector(el, x.sel);
+        let p = el;                            // subtree：元素自身或任一祖先命中
+        while (p) { if (matchSelector(p, x.sel)) return true; p = p.parent; }
+        return false;
+    });
+}
+
 function main(exitOnFail) {
     const css = injectedCss();
     const rule = /:where\(([^)]*)\):not\(:where\(([\s\S]*?)\)\)\s*\{/.exec(css);
@@ -191,40 +227,50 @@ function main(exitOnFail) {
         return { kind: 'self', sel: s };
     });
     const { pageRules, cases } = parsePage(fs.readFileSync(PAGE, 'utf8'));
+    const hasHard = css.indexOf('.gm-softlight-hard') >= 0;            // 装的这份脚本有没有 2.3.0 判据
+    // 补压时的跳过列表 = 全部排除项**去掉"内联 color"那一组**（内联亮白也该压）
+    const sweepExcludes = excludes.filter((x) => !/\[style[^\]]*color/i.test(x.sel));
 
-    let pass = 0, fail = 0, limit = 0; const bad = [], notes = [];
+    let pass = 0, fail = 0, limit = 0, skipped = 0; const bad = [], notes = [];
     for (const el of cases) {
         const want = el.attrs['data-expect'];
         const inWhitelist = whitelist.includes(el.tag);
-        const hitExclude = excludes.some((x) => {
-            if (x.kind === 'self') return matchSelector(el, x.sel);
-            if (x.kind === 'child') return (el.parent && matchSelector(el.parent, x.sel)) || matchSelector(el, x.sel);
-            let p = el;                        // subtree：元素自身或任一祖先命中
-            while (p) { if (matchSelector(p, x.sel)) return true; p = p.parent; }
-            return false;
-        });
+        const hitExclude = hitExcludes(el, excludes);
         const dimmed = inWhitelist && !hitExclude;
         const inlineColor = /(^|;)\s*color\s*:/.test(el.style);
-        const pageColor = inlineColor || pageRules.some((r) => r.sel && matchSelector(el, r.sel));
-        // 我们的规则优先级是 (0,0,0)：站点只要在该元素上声明过颜色（内联/类名）就赢
-        const actual = !dimmed ? 'kept' : (pageColor ? 'kept' : 'dimmed');
-        const why = !dimmed
-            ? (!inWhitelist ? '不在压暗白名单' : '命中排除列表')
-            : (pageColor ? '站点自己声明过颜色 ⇒ 让给站点' : '没有自己的颜色 ⇒ 被压暗');
+        const declared = (inlineColor ? [el.style] : []).concat(
+            pageRules.filter((r) => r.sel && matchSelector(el, r.sel)).map((r) => r.value));
+        const pageColor = declared.length > 0;
+        // 2.3.0：站点声明过颜色的元素，若声明值"又亮又几乎没色调"，会被补压（.gm-softlight-hard）
+        const hard = hasHard && declared.some((v) => isGlaring(parseColor(v))) &&
+            sweepCandidate(el) && !hitExcludes(el, sweepExcludes);
+        // 基础规则的优先级是 (0,0,0)：站点只要在该元素上声明过颜色（内联/类名）就赢；补压那条是定向覆盖
+        const actual = hard ? 'dimmed' : (!dimmed ? 'kept' : (pageColor ? 'kept' : 'dimmed'));
+        const why = hard ? '站点声明的就是亮白 ⇒ 2.3.0 补压'
+            : (!dimmed
+                ? (!inWhitelist ? '不在压暗白名单' : '命中排除列表')
+                : (pageColor ? '站点自己声明过颜色 ⇒ 让给站点' : '没有自己的颜色 ⇒ 被压暗'));
         const name = '<' + el.tag + (el.classes.length ? '.' + el.classes.join('.') : '') + '> ' +
             (el.text || '').trim().replace(/\s+/g, ' ').slice(0, 26);
 
+        if (el.attrs['data-need'] && !hasHard) {
+            skipped++;
+            notes.push('⏭ [skip] ' + name + '（这一版脚本没有 2.3.0 亮白判据）');
+            continue;
+        }
         if (want === 'limit') {
             limit++;
             notes.push('ℹ️ [limit] ' + name + ' ⇒ ' + actual + '（' + why + '；已知限制，不计成败）');
             continue;
         }
         const ok = (want === 'dim' && actual === 'dimmed') || (want === 'keep' && actual === 'kept');
-        if (ok) { pass++; if (VERBOSE) notes.push('✅ [' + want + '] ' + name + ' ⇒ ' + actual + '（' + why + '）'); }
+        if (ok) { pass++; if (VERBOSE) notes.push('✅ [' + want + '] ' + name + ' ⇒ ' + actual + '（' + why + '）' +
+            '[dim=' + dimmed + ' page=' + pageColor + ' hard=' + hard + ' decl=' + declared.length + ']'); }
         else { fail++; bad.push('❌ [' + want + '] ' + name + ' ⇒ ' + actual + '（' + why + '）'); }
     }
 
-    console.log('用例总数 ' + cases.length + '（其中已知限制 ' + limit + ' 条）');
+    console.log('用例总数 ' + cases.length + '（其中已知限制 ' + limit + ' 条' +
+        (skipped ? '，跳过 ' + skipped + ' 条：需要 2.3.0+' : '') + '）');
     console.log('通过 ' + pass + '　失败 ' + fail);
     if (bad.length) { console.log(''); bad.forEach((b) => console.log(b)); }
     if (notes.length && (VERBOSE || fail)) { console.log(''); notes.forEach((n) => console.log(n)); }
