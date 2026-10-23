@@ -85,6 +85,8 @@ function matchCompound(el, sel) {
     sel = sel.trim();
     const isGroups = [...sel.matchAll(/:is\(([^)]*)\)/g)].map((m) => m[1]);
     sel = sel.replace(/:is\([^)]*\)/g, '');
+    const notGroups = [...sel.matchAll(/:not\(([^)]*)\)/g)].map((m) => m[1]);
+    sel = sel.replace(/:not\([^)]*\)/g, '');
     const attrs = [...sel.matchAll(/\[\s*([\w-]+)\s*(?:([\^*$~|]?=)\s*(?:"([^"]*)"|'([^']*)'|([^\]\s]+))\s*(i)?)?\s*\]/g)];
     const classes = [...sel.matchAll(/\.([\w-]+)/g)].map((m) => m[1]);
     const ids = [...sel.matchAll(/#([\w-]+)/g)].map((m) => m[1]);
@@ -107,6 +109,9 @@ function matchCompound(el, sel) {
     }
     for (const g of isGroups) {
         if (!splitTop(g, ',').some((sub) => matchCompound(el, sub))) return false;
+    }
+    for (const g of notGroups) {
+        if (splitTop(g, ',').some((sub) => matchCompound(el, sub))) return false;
     }
     return true;
 }
@@ -144,6 +149,13 @@ function parsePage(html) {
         for (const sel of splitTop(m[1], ',')) pageRules.push({ sel: sel.replace(/::?[\w-]+(\([^)]*\))?/g, ''), value: (value || '').trim() });
     }
     // 3.2 用例元素（栈式遍历，记录祖先链）
+    //     <html> 也要进祖先链：根级类名（工具类/主题类）是成套 bug 的来源，模型里不能缺这一层
+    const htmlOpen = /<html([^>]*)>/i.exec(html);
+    const htmlEl = { tag: 'html', classes: [], id: '', attrs: {}, style: '', parent: null };
+    if (htmlOpen) {
+        const cls = /class\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(htmlOpen[1]);
+        htmlEl.classes = ((cls ? (cls[1] || cls[2] || '') : '')).split(/\s+/).filter(Boolean);
+    }
     const body = html.slice(html.indexOf('<body'));
     const re = /<!--[\s\S]*?-->|<\/([a-zA-Z][\w-]*)\s*>|<([a-zA-Z][\w-]*)((?:"[^"]*"|'[^']*'|[^>"'])*?)(\/?)>|([^<]+)/g;
     const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
@@ -167,7 +179,7 @@ function parsePage(html) {
         const close = m[1], open = m[2], raw = m[3] || '', text = m[5];
         if (close) { for (let i = stack.length - 1; i >= 0; i--) if (stack[i].el.tag === close.toLowerCase()) { stack.length = i; break; } continue; }
         if (open) {
-            const parent = stack.length ? stack[stack.length - 1].el : null;
+            const parent = stack.length ? stack[stack.length - 1].el : htmlEl;
             const el = makeEl(open, raw, parent);
             if (el.attrs['data-expect']) { el.text = ''; cases.push(el); }
             if (!VOID.has(el.tag) && m[4] !== '/') stack.push({ el });
@@ -178,7 +190,7 @@ function parsePage(html) {
             if (top && top.attrs && top.attrs['data-expect']) top.text += text;
         }
     }
-    return { pageRules, cases };
+    return { pageRules, cases, htmlEl };
 }
 
 // ---------- 4. 判定 ----------
@@ -228,10 +240,11 @@ function main(exitOnFail) {
         if (/\s\*$/.test(s)) return { kind: 'subtree', sel: s.replace(/\s\*$/, '') };
         return { kind: 'self', sel: s };
     });
-    const { pageRules, cases } = parsePage(fs.readFileSync(PAGE, 'utf8'));
+    const { pageRules, cases, htmlEl } = parsePage(fs.readFileSync(PAGE, 'utf8'));
     const hasHard = css.indexOf('.gm-softlight-hard') >= 0;            // 装的这份脚本有没有 2.3.0 判据
     const hasB2 = css.indexOf('class$="-red"') >= 0;                   // 2.4：词首+词尾双边界
     const hasSp = css.indexOf('class~="') >= 0;                        // 2.4.1：空格分隔词
+    const has25 = css.indexOf(':not(html)') >= 0;                      // 2.5：根级类名护栏
     // 补压时的跳过列表 = 全部排除项**去掉"内联 color"那一组**（内联亮白也该压）
     const sweepExcludes = excludes.filter((x) => !/\[style[^\]]*color/i.test(x.sel));
 
@@ -250,6 +263,7 @@ function main(exitOnFail) {
             sweepCandidate(el) && !hitExcludes(el, sweepExcludes);
         // 基础规则的优先级是 (0,0,0)：站点只要在该元素上声明过颜色（内联/类名）就赢；补压那条是定向覆盖
         const actual = hard ? 'dimmed' : (!dimmed ? 'kept' : (pageColor ? 'kept' : 'dimmed'));
+        el.__actual = actual;
         const why = hard ? '站点声明的就是亮白 ⇒ 2.3.0 补压'
             : (!dimmed
                 ? (!inWhitelist ? '不在压暗白名单' : '命中排除列表')
@@ -258,10 +272,11 @@ function main(exitOnFail) {
             (el.text || '').trim().replace(/\s+/g, ' ').slice(0, 26);
 
         const need = el.attrs['data-need'];
-        const have = { '2.3': hasHard, '2.4': hasB2, '2.4.1': hasSp }[need];   // 2.3 亮白判据 / 2.4 双边界 / 2.4.1 空格分隔词
+        const have = { '2.3': hasHard, '2.4': hasB2, '2.4.1': hasSp, '2.5': has25 }[need];   // 2.3 亮白判据 / 2.4 双边界 / 2.4.1 空格分隔词 / 2.5 根级护栏
         if (need && !have) {
             skipped++;
-            notes.push('⏭ [skip] ' + name + '（这一版脚本没有 2.3.0 亮白判据）');
+            el.__skip = true;
+            notes.push('⏭ [skip] ' + name + '（这一版脚本没有所需能力 ' + need + '.0+）');
             continue;
         }
         if (want === 'limit') {
@@ -275,14 +290,37 @@ function main(exitOnFail) {
         else { fail++; bad.push('❌ [' + want + '] ' + name + ' ⇒ ' + actual + '（' + why + '）'); }
     }
 
+    // 自检：根节点挂上工具类（维基 ilhpp-pref-link-orig 事故形态）后，每条已判定用例的结论必须不变
+    const evalOne = (el) => {
+        const inW = whitelist.includes(el.tag);
+        const dimmed = inW && !hitExcludes(el, excludes);
+        const inlineColor = /(^|;)\s*color\s*:/.test(el.style);
+        const declared = (inlineColor ? [el.style] : []).concat(
+            pageRules.filter((r) => r.sel && matchSelector(el, r.sel)).map((r) => r.value));
+        const hard = hasHard && declared.some((v) => isGlaring(parseColor(v))) &&
+            sweepCandidate(el) && !hitExcludes(el, sweepExcludes);
+        return hard ? 'dimmed' : (!dimmed ? 'kept' : (declared.length > 0 ? 'kept' : 'dimmed'));
+    };
+    htmlEl.classes.push('ilhpp-pref-link-orig');
+    const rootChanged = [];
+    for (const el of cases) {
+        if (el.__skip) continue;
+        const now = evalOne(el);
+        if (now !== el.__actual) rootChanged.push({ el, now });
+    }
+    htmlEl.classes.pop();
+    const rootOk = rootChanged.length === 0;
+    console.log('根级类名自检（html 加一个含 -link- 的类名）：' + (rootOk ? '✓ 结论全部不变' : '✗ ' + rootChanged.length + ' 条结论被改变'));
+    rootChanged.slice(0, 3).forEach((r) => console.log('  ✗ <' + r.el.tag + (r.el.classes.length ? '.' + r.el.classes.join('.') : '') + '> 原为 ' + r.el.__actual + '，加根级类名后变成 ' + r.now));
+
     console.log('用例总数 ' + cases.length + '（其中已知限制 ' + limit + ' 条' +
         (skipped ? '，跳过 ' + skipped + ' 条：当前脚本没有所需能力' : '') + '）');
     console.log('通过 ' + pass + '　失败 ' + fail);
     if (bad.length) { console.log(''); bad.forEach((b) => console.log(b)); }
     if (notes.length && (VERBOSE || fail)) { console.log(''); notes.forEach((n) => console.log(n)); }
     console.log('');
-    console.log(fail ? '✗ 有用例不符合预期' : '✓ 全部符合预期（静态校验：选择器 + 优先级模型）');
-    if (fail && exitOnFail !== false) process.exit(1);
+    console.log((fail || !rootOk) ? '✗ ' + (fail ? '有用例不符合预期' : '根级类名自检未通过') : '✓ 全部符合预期（静态校验：选择器 + 优先级模型）');
+    if ((fail || !rootOk) && exitOnFail !== false) process.exit(1);
 }
 // ---------- 5. 入口 ----------
 function serve() {
