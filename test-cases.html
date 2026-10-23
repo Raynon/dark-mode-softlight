@@ -338,6 +338,11 @@
             <td><span class="tag keep">保持</span></td>
         </tr>
         <tr>
+            <td class="case"><div style="background:transparent"><span data-expect="dim" data-need="2.5">容器只有透明底（不是透明文字），里面的文字仍应被压暗</span></div></td>
+            <td class="why">2.5：「style 含 transparent」只护自己、不连子树（以前容器一带 transparent 就整块漏压）</td>
+            <td><span class="tag dim">压暗</span></td>
+        </tr>
+        <tr>
             <td class="case"><span class="nav-link" data-expect="keep">类名做的链接（.nav-link）</span>　<span class="tag-demo badge-demo" data-expect="keep">标签 tag</span></td>
             <td class="why">关键词 link / tag / badge（词首边界；tag/badge 只护自己+直接子元素）</td>
             <td><span class="tag keep">保持</span></td>
@@ -411,11 +416,13 @@
             ['方案2（用 :where() 降优先级）', css.indexOf(':where(') >= 0],
             ['基础规则不用 !important（2.3.0 起的定向亮白覆盖除外）', !!base && base[1].indexOf('!important') < 0],
             ['h1–h6 在白名单里', /(,|\s)h1(,|\s)/.test(flat)],
-            ['结构排除：nav / 表单标签 / 表头', flat.indexOf('nav, nav *') >= 0 || flat.indexOf('nav *') >= 0],
+            ['结构排除：nav / 表单标签 / 表头', css.indexOf('nav:not(html)') >= 0 || flat.indexOf('nav,') >= 0],
             ['ARIA role 组', css.indexOf('[role="tab"]') >= 0],
             ['内联色 + 直接子元素', css.indexOf('[style^="color:" i] > *') >= 0],
             ['tag / badge 关键词', css.indexOf('[class^="tag" i] > *') >= 0],
-            ['link / breadcrumb 关键词', css.indexOf('[class^="link" i] *') >= 0 && css.indexOf('breadcrumb" i]') >= 0],
+            ['link / breadcrumb 关键词', css.indexOf('[class^="link-" i]') >= 0 && css.indexOf('breadcrumb" i]') >= 0],
+            ['根级类名护栏（html/body 不作子树排除源）', css.indexOf(':not(html)') >= 0],
+            ['透明底只护自己（不连子树）', css.indexOf('transparent"] *') < 0],
             ['亮白判据（2.3.0 本地测试版才有）', css.indexOf('.gm-softlight-hard') >= 0],
         ];
         return marks;
@@ -427,7 +434,6 @@
         if (!live.length) return [];
         const host = document.createElement('div');
         host.setAttribute('data-probe', '1');
-        host.style.color = '#f5f5f5';        // ⚠️ 外层自己声明颜色，免得探针"继承"到被压暗的灰（A3）
         document.body.appendChild(host);
         const make = (tag, cls, role) => {
             const el = document.createElement(tag);
@@ -451,6 +457,27 @@
         saves.forEach((sv, i) => { if (parents[i]) parents[i].appendChild(sv); });
         host.remove();
         return items.map((it, i) => ({ name: it[0], before: off[i], after: on[i], kept: off[i] === on[i] }));
+    }
+
+    // 根级类名探针：给 <html> 加一个含 -link- 的类名（维基 ilhpp 工具类那种形态），正文仍应被压暗
+    function probeRootClass() {
+        var styles = [].slice.call(document.querySelectorAll('#gm-style-softlight'));
+        if (!styles.length) return null;
+        var host = document.createElement('div');
+        var p = document.createElement('p');
+        p.textContent = '根级类名探针';
+        host.appendChild(p);
+        document.body.appendChild(host);
+        var withScript = getComputedStyle(p).color;
+        var parents = styles.map(function (s) { return s.parentNode; });
+        styles.forEach(function (s) { s.remove(); });
+        var withoutScript = getComputedStyle(p).color;
+        styles.forEach(function (s, i) { if (parents[i]) parents[i].appendChild(s); });
+        document.documentElement.classList.add('probe-link-x');
+        var withRootClass = getComputedStyle(p).color;
+        document.documentElement.classList.remove('probe-link-x');
+        host.remove();
+        return { dimmed: withScript !== withoutScript, stable: withScript === withRootClass, before: withoutScript, after: withScript, root: withRootClass };
     }
 
     function label(el) {
@@ -478,6 +505,8 @@
         var hasB2 = styles.some(function (s) { return s.textContent.indexOf('class$="-red"') >= 0; });
         // 2.4.1：补上空格分隔的独立词（[class~="red" i]）
         var hasSp = styles.some(function (s) { return s.textContent.indexOf('class~="') >= 0; });
+        // 2.5：根级类名护栏（html/body 上的类名不作子树排除源）
+        var has25 = styles.some(function (s) { return s.textContent.indexOf(':not(html)') >= 0; });
         var parents = styles.map(function (s) { return s.parentNode; });
         var on = els.map(function (el) { return getComputedStyle(el).color; });
         styles.forEach(function (s) { s.remove(); });
@@ -490,7 +519,7 @@
         els.forEach(function (el, i) {
             var want = el.getAttribute('data-expect'), got = on[i], was = off[i], verdict, cls;
             var need = el.getAttribute('data-need');
-            var have = { '2.3': hasHard, '2.4': hasB2, '2.4.1': hasSp }[need];   // 2.3 亮白判据 / 2.4 双边界 / 2.4.1 空格分隔词
+            var have = { '2.3': hasHard, '2.4': hasB2, '2.4.1': hasSp, '2.5': has25 }[need];   // 2.3 亮白判据 / 2.4 双边界 / 2.4.1 空格分隔词 / 2.5 根级护栏
             if (need && !have) {                                     // 当前脚本没有该能力 ⇒ 跳过，不算失败
                 skipped++;
                 rows.push('<tr><td>' + label(el) + '</td><td>' + esc(want) + '</td><td>—</td><td>—</td><td class="muted">⏭ 跳过（需要 ' + esc(need) + '.0+）</td></tr>');
@@ -515,7 +544,7 @@
         out.innerHTML =
             '<div class="' + (fail ? 'warn' : 'box') + '"><b>结果：' + pass + ' 通过 / ' + fail + ' 失败</b>' +
             '（另有 ' + notes + ' 条"已知限制"' + (skipped ? '、' + skipped + ' 条"跳过：当前脚本没有所需能力"' : '') + '不计入）' +
-            (skipped ? '<br><span class="muted">跳过的用例需要更新的脚本：<code>data-need="2.3"</code> 要 2.3.0+ 亮白判据；<code>data-need="2.4"</code> 要 2.4.0+「关键词双边界」；<code>data-need="2.4.1"</code> 要 2.4.1+「空格分隔词 <code>class~=</code>」。</span>' : '') +
+            (skipped ? '<br><span class="muted">跳过的用例需要更新的脚本：<code>data-need="2.3"</code> 要 2.3.0+ 亮白判据；<code>data-need="2.4"</code> 要 2.4.0+「关键词双边界」；<code>data-need="2.4.1"</code> 要 2.4.1+「空格分隔词 <code>class~=</code>」；<code>data-need="2.5"</code> 要 2.5.0+「根级类名护栏」。' + '</span>' : '') +
             (dimColor ? '　当前压暗色 = <code>' + esc(dimColor) + '</code>（可在脚本菜单里改亮度值）' : '') +
             (fail ? '<br><span class="bad">应压暗的没变灰 ⇒ 它自己/祖先声明了颜色（正常）；应保持的被改 ⇒ 排除漏了这类。失败清单：</span><br><code>' + esc(failNames.join('　')) + '</code>' : '') +
             '</div>' +
@@ -535,6 +564,16 @@
             }).join('') +
             '</table>' +
             '<p class="muted" style="margin:8px 0 0">对照组 &lt;p&gt; 应该"❌ 被改"；其余 4 个若也"❌ 被改"，说明排除列表没生效。</p>' +
+            (function () {
+                var r = probeRootClass();
+                if (!r) return '';
+                var ok = r.dimmed && r.stable;
+                return '<h3 style="margin:18px 0 6px;font-size:15px">根级类名探针（给 <code>&lt;html&gt;</code> 临时加一个含 <code>-link-</code> 的类名）</h3>' +
+                    '<table><tr><th>元素</th><th>没有根级类名</th><th>加根级类名后</th><th>判定</th></tr>' +
+                    '<tr><td>&lt;p&gt;</td><td>' + esc(r.after) + '</td><td>' + esc(r.root) + '</td><td class="' + (ok ? 'ok' : 'bad') + '">' +
+                    (ok ? '✅ 不受影响' : '❌ 被根级类名排除（整页会漏压）') + '</td></tr></table>' +
+                    '<p class="muted" style="margin:8px 0 0">2.5.0 之前这条会失败：根节点上的工具类名会命中关键词，把整页排除（维基 ilhpp 事故形态）。</p>';
+            })() +
             '<table><tr><th>元素</th><th>期望</th><th>脚本前</th><th>脚本后</th><th>判定</th></tr>' + rows.join('') + '</table>';
         return { pass: pass, fail: fail, limit: notes };
     }
