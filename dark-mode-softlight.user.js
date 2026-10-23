@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         暗黑模式 · 大面积文案柔光降白
 // @namespace    https://greasyfork.org/scripts/588400
-// @version      2.4.1
+// @version      2.4.2
 // @description  压暗大面积正文，支持按网站独立调节亮度，严格保护交互/高亮/代码/黑幕/透明文字
 // @author       Raynon
 // @license      MIT
@@ -49,13 +49,15 @@
         'em', 'code', 'label', 'summary', 'legend', 'fieldset', 'kbd', 'mark',
         // 标签型：短、常带站点配色
         'th', 'dt', 'figcaption', 'nav',
-        '.heimu', '[style*="transparent"]', '#' + OVERLAY_ID, '#' + TOAST_ID
+        '.heimu', '#' + OVERLAY_ID, '#' + TOAST_ID
     ];
-    // 代码 / 编辑器：保住语法高亮
+    // 代码 / 编辑器：保住语法高亮（editor 改按"词"认，见 EDITOR_WORDS）
     const EXCLUDE_CODE = [
-        'pre', '[contenteditable]', '[class*="editor" i]', '[class*="mirror" i]',
+        'pre', '[contenteditable]', '[class*="mirror" i]',
         '[class*="hljs" i]', '[class*="shiki" i]'
     ];
+    // 透明文字：只护自己。这类行内样式常写在容器上（background:transparent），连子树会把整块放过
+    const EXCLUDE_SELF = ['[style*="transparent"]'];
     // div/span 写的 UI（导航、标签页、菜单…）用 role 认，比猜类名可靠
     const EXCLUDE_ROLES = [
         'navigation', 'tablist', 'tab', 'menu', 'menubar', 'menuitem', 'menuitemcheckbox',
@@ -84,15 +86,21 @@
         `[class$="-${w}" i]`, `[class$="_${w}" i]`,
         `[class*="-${w}-" i]`, `[class*="_${w}_" i]`
     ];
+    const EDITOR_WORDS = ['editor'];                      // 编辑器容器按"词"认，避免 editorial 这类正文类名被当编辑器
+
     const EXCLUDE = [];
-    EXCLUDE_TAGS.concat(EXCLUDE_CODE).forEach(s => EXCLUDE.push(s, s + ' *'));
+    // 根/主体容器上的类名多是工具类、主题类：命中它们不许当"子树排除源"，否则一条命中就关掉整页
+    const ROOT_GUARD = ':not(html):not(body)';
+    EXCLUDE_TAGS.concat(EXCLUDE_CODE).forEach(s => EXCLUDE.push(s, s + ROOT_GUARD + ' *'));
+    EDITOR_WORDS.forEach(w => wordSelector(w).forEach(s => EXCLUDE.push(s, s + ROOT_GUARD + ' *')));
     const ROLE_SELECTOR = ':is(' + EXCLUDE_ROLES.map(r => `[role="${r}"]`).join(',') + ')';
-    EXCLUDE.push(ROLE_SELECTOR, ROLE_SELECTOR + ' *');
+    EXCLUDE.push(ROLE_SELECTOR, ROLE_SELECTOR + ROOT_GUARD + ' *');
+    EXCLUDE_SELF.forEach(s => EXCLUDE.push(s));            // 透明文字：只护自己，不连子树
     EXCLUDE_INLINE.forEach(s => EXCLUDE.push(s, s + ' > *'));
     CHIP_WORDS.forEach(w => wordSelector(w).forEach(s => EXCLUDE.push(s, s + ' > *')));
     // 颜色/语义词：只护自己 + 直接子元素（连整棵子树时，祖先偶然含颜色词就会吃掉一整块内容：Gemini 的 reduced-* 就是这么来的）
     COLOR_WORDS.forEach(w => wordSelector(w).forEach(s => EXCLUDE.push(s, s + ' > *')));
-    NAME_WORDS.forEach(w => wordSelector(w).forEach(s => EXCLUDE.push(s, s + ' *')));      // 链接 / 面包屑：连子树
+    NAME_WORDS.forEach(w => wordSelector(w).forEach(s => EXCLUDE.push(s, s + ROOT_GUARD + ' *')));   // 链接 / 面包屑：连子树（根级除外）
     const EXCLUDE_SELECTOR = EXCLUDE.join(', ');
 
     // ===== 2.3.0 亮白判据（低成本变体）：站点把"标题"声明成亮白时也压一档 =====
