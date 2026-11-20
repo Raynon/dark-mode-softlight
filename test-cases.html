@@ -408,6 +408,11 @@
 
     function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]; }); }
 
+    // 关键词在 CSS 里的三种词边界形态（2.4.0 起不再有 [class^="tag" i] 这种"词首"写法）
+    function hasWord(css, w) {
+        return ['[class~="' + w + '" i]', '[class^="' + w + '-" i]', '[class*="-' + w + '-" i]'].some(function (s) { return css.indexOf(s) >= 0; });
+    }
+
     // 注入样式的"指纹"：用来判断当前装的是哪一版脚本、排除列表有没有真的生效
     function fingerprint(css) {
         const flat = css.replace(/\s+/g, ' ');
@@ -419,7 +424,7 @@
             ['结构排除：nav / 表单标签 / 表头', css.indexOf('nav:not(html)') >= 0 || flat.indexOf('nav,') >= 0],
             ['ARIA role 组', css.indexOf('[role="tab"]') >= 0],
             ['内联色 + 直接子元素', css.indexOf('[style^="color:" i] > *') >= 0],
-            ['tag / badge 关键词', css.indexOf('[class^="tag" i] > *') >= 0],
+            ['tag / badge 关键词', hasWord(css, 'tag') && hasWord(css, 'badge')],
             ['link / breadcrumb 关键词', css.indexOf('[class^="link-" i]') >= 0 && css.indexOf('breadcrumb" i]') >= 0],
             ['根级类名护栏（html/body 不作子树排除源）', css.indexOf(':not(html)') >= 0],
             ['透明底只护自己（不连子树）', css.indexOf('transparent"] *') < 0],
@@ -435,6 +440,11 @@
         const host = document.createElement('div');
         host.setAttribute('data-probe', '1');
         document.body.appendChild(host);
+        // 宿主自己声明颜色（用属性选择器规则，不用内联）：否则子元素会继承被压暗的 root 色，
+        // 排除了也照样变灰，探针必然误报"被改"
+        const keep = document.createElement('style');
+        keep.textContent = '[data-probe="1"]{color:#f5f5f5}';
+        document.head.appendChild(keep);
         const make = (tag, cls, role) => {
             const el = document.createElement(tag);
             if (cls) el.className = cls;
@@ -456,6 +466,7 @@
         const off = items.map((it) => getComputedStyle(it[1]).color);
         saves.forEach((sv, i) => { if (parents[i]) parents[i].appendChild(sv); });
         host.remove();
+        keep.remove();
         return items.map((it, i) => ({ name: it[0], before: off[i], after: on[i], kept: off[i] === on[i] }));
     }
 
