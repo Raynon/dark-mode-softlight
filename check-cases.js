@@ -2,9 +2,9 @@
 /**
  * 用例覆盖检查器（不依赖浏览器，给 agent / 命令行用）
  *
- *   node check-cases.js            # 检查 test-cases.html 里的全部用例
- *   node check-cases.js -v         # 同时打印通过的用例
- *   node check-cases.js --serve    # 先检查，再起本地静态服务（测试页必须用 http:// 打开）
+ *   node dist/check-cases.js            # 检查 test-cases.html 里的全部用例
+ *   node dist/check-cases.js -v         # 同时打印通过的用例
+ *   node dist/check-cases.js --serve    # 先检查，再起本地静态服务（测试页必须用 http:// 打开）
  *
  * 它做三件事：
  *   1. 把 userscript 跑在沙箱里（GM_* 打桩），拿到它**真实注入的 CSS**；
