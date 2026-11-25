@@ -394,9 +394,32 @@
     </table>
 </div>
 
+<h2>⑥ 集成：亮度菜单跨 frame（需你手动点一次菜单）</h2>
+<div class="box">
+    <p class="muted" style="margin:0 0 8px">这一节验的是「菜单 → 浮层登记」这条链路，不是规则本身。页面不能替你点油猴菜单，所以按下面三步来：</p>
+    <ol style="margin:0 0 10px;padding-left:22px;line-height:1.9">
+        <li>点油猴菜单 <b>🔆 全站文字亮度</b>，浮层应弹出；</li>
+        <li>浮层弹出后本页会自动判读；也可点下面「① 检查浮层登记」重跑；</li>
+        <li>关掉浮层、等 3 秒，再点「② 关掉后不应自动重弹」。</li>
+    </ol>
+    <p class="muted" style="margin:0 0 10px">同源子 frame 的 host 与主站相同、会被去重，所以本节只验证「本站行 + 去重 + 空/重复防护」；不同源 iframe 的登记需在真实站点验证。</p>
+    <p style="margin:0 0 10px"><button id="menu-check-1">① 检查浮层登记</button> <button id="menu-check-2">② 关掉后不应自动重弹</button></p>
+    <div id="menu-report"></div>
+    <iframe id="menu-frame" src="?frame=1" title="同源子 frame（应参与登记）" style="display:block;width:100%;height:88px;border:1px dashed #555;border-radius:6px;margin-top:12px;background:#1a1a1a"></iframe>
+</div>
+
 <script>
 (function () {
     'use strict';
+
+    // 以 ?frame=1 打开时只渲染一句说明，供主页面里的同源子 frame 使用（避免无限递归）
+    if (/[?&]frame=/.test(location.search)) {
+        document.title = '子 frame';
+        document.body.innerHTML = '<p style="margin:0;padding:12px;color:#bbb;font:13px/1.7 system-ui,sans-serif">' +
+            '我是同源子 frame，host 与主站相同（登记时会被去重）。</p>';
+        return;
+    }
+
     var DIM = 'dim', KEEP = 'keep', LIMIT = 'limit';
 
     function isNeutralGray(c) {
@@ -602,6 +625,86 @@
         }
     }
 
+    // ⑥ 集成：亮度菜单跨 frame —— 菜单只能由人点，页面只负责判读浮层里登记了什么
+    var OVERLAY = 'gm-lightness-overlay';
+    var overlaySeen = false;
+
+    function menuTable(rows) {
+        return '<table><tr><th>检查项</th><th>实测</th><th>判定</th></tr>' + rows.map(function (r) {
+            return '<tr><td>' + r[0] + '</td><td><code>' + esc(r[1]) + '</code></td><td>' + (r[2] ? '✅ 通过' : '❌ 不通过') + '</td></tr>';
+        }).join('') + '</table>';
+    }
+
+    function menuHosts() {
+        var ov = document.getElementById(OVERLAY);
+        if (!ov) return null;
+        return Array.prototype.map.call(ov.querySelectorAll('input[data-host]'), function (inp) {
+            return inp.getAttribute('data-host');
+        });
+    }
+
+    function menuCheck1() {
+        var rep = document.getElementById('menu-report');
+        var hosts = menuHosts();
+        if (!hosts) {
+            rep.innerHTML = '<div class="warn"><b>没找到浮层</b>：先点油猴菜单「🔆 全站文字亮度」，浮层弹出后再点本按钮。</div>';
+            return null;
+        }
+        var self = location.hostname;
+        var uniq = hosts.filter(function (h, i) { return hosts.indexOf(h) === i; });
+        var empty = hosts.filter(function (h) { return !h || !h.trim(); });
+        var frame = document.getElementById('menu-frame');
+        var frameDoc = null;
+        try { frameDoc = frame && frame.contentWindow ? frame.contentWindow.document : null; } catch (e) { frameDoc = null; }
+        var frameOk = !!(frameDoc && frameDoc.title === '子 frame');
+        overlaySeen = true;
+        var out = [
+            ['浮层第一行是本站（主站行不能丢）', self, hosts[0] === self],
+            ['登记行都有 host', hosts.length + ' 行' + (empty.length ? '，空 ' + empty.length + ' 行' : ''), hosts.length >= 1 && empty.length === 0],
+            ['无重复 host', uniq.length + ' / ' + hosts.length, uniq.length === hosts.length],
+            ['不超过 50 行', hosts.length + ' 行', hosts.length <= 50],
+            ['子 frame 已加载（?frame=1）', frame ? (frameOk ? '已加载' : '未加载') : '缺', frameOk]
+        ];
+        var pass = out.filter(function (r) { return r[2]; }).length;
+        rep.innerHTML = menuTable(out) + '<p class="muted" style="margin:8px 0 0">浮层里的 host：<code>' +
+            esc(hosts.join(' | ')) + '</code>　通过 ' + pass + ' / ' + out.length + '。</p>';
+        return { pass: pass, total: out.length };
+    }
+
+    function menuCheck2() {
+        var rep = document.getElementById('menu-report');
+        if (document.getElementById(OVERLAY)) {
+            rep.innerHTML = '<div class="warn">浮层还开着：先把它关掉（点「取消」或「确认」），再点本按钮。</div>';
+            return null;
+        }
+        if (!overlaySeen) {
+            rep.innerHTML = '<div class="warn"><b>还没见过浮层</b>：先点油猴菜单「🔆 全站文字亮度」并关掉浮层，再点本按钮；否则「没有重弹」是空通过。</div>';
+            return null;
+        }
+        rep.innerHTML = '<p class="muted">等 3 秒，看浮层会不会自己回来……</p>';
+        setTimeout(function () {
+            var back = !!document.getElementById(OVERLAY);
+            rep.innerHTML = menuTable([['关掉后 3 秒内没有自动重弹', back ? '浮层又出现了' : '没有出现', !back]]);
+        }, 3000);
+        return null;
+    }
+
+    document.getElementById('menu-check-1').addEventListener('click', menuCheck1);
+    document.getElementById('menu-check-2').addEventListener('click', menuCheck2);
+
+    // 浮层是全屏遮罩，弹出时页面按钮点不到；感知到浮层出现后自动判读一次
+    new MutationObserver(function (records) {
+        for (var i = 0; i < records.length; i++) {
+            var added = records[i].addedNodes;
+            for (var j = 0; j < added.length; j++) {
+                var n = added[j];
+                if (n && n.id === OVERLAY) {
+                    overlaySeen = true;
+                    setTimeout(menuCheck1, 50);
+                }
+            }
+        }
+    }).observe(document.body, { childList: true });
     document.getElementById('run').addEventListener('click', runCheckSafe);
 })();
 </script>
