@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         暗黑模式 · 大面积文案柔光降白
 // @namespace    https://greasyfork.org/scripts/588400
-// @version      2.4.2
+// @version      2.4.3
 // @description  压暗大面积正文，支持按网站独立调节亮度，严格保护交互/高亮/代码/黑幕/透明文字
 // @author       Raynon
 // @license      MIT
@@ -138,12 +138,27 @@
 
     // ===== 跨 frame 同步：子 frame 的页面键与主页面不同，状态由顶层广播 =====
     const SYNC_MSG = 'gm-softlight-sync';
+    const HOST_MSG = 'gm-softlight-host';   // 菜单点击时，子 frame 把 host 报给顶层统一登记
+    const HOST_WIN = 800;                   // 顶层合并窗口：只收点击后 800 ms 内的报名
     let topOff = null;                      // 由顶层广播而来：true = 主页面已关闭压暗
+    let pendingHosts = [];                  // 顶层暂存：本次点击报到的主站 + 各 frame
+    let hostWinTimer = null;                // 非空 = 合并窗口开着
 
     function pushToChildren(off) {
         for (let i = 0; i < window.frames.length; i++) {
             try { window.frames[i].postMessage({ t: SYNC_MSG, off: off }, '*'); } catch (e) {}
         }
+    }
+
+    // 合并窗口的出口：暂存并进存储再弹浮层；浮层同时只存在一个，重复调用不会弹第二个
+    function flushHosts() {
+        hostWinTimer = null;
+        if (!pendingHosts.length) return;
+        const pending = GM_getValue(PENDING_KEY, []);
+        pendingHosts.forEach(h => { if (!pending.includes(h)) pending.push(h); });
+        GM_setValue(PENDING_KEY, pending);
+        pendingHosts = [];
+        showOverlay();
     }
 
     function isOff() {
@@ -152,6 +167,13 @@
     }
 
     window.addEventListener('message', e => {
+        if (e.data && e.data.t === HOST_MSG) {
+            if (window.top !== window.self || !hostWinTimer) return;   // 窗口关着＝这批已结束，晚到一律不收
+            const h = String(e.data.host || '');
+            if (!/^[a-z0-9.-]{1,253}$/i.test(h) || pendingHosts.includes(h) || pendingHosts.length >= 50) return;
+            pendingHosts.push(h);
+            return;
+        }
         if (!e.data || e.data.t !== SYNC_MSG) return;
         if (e.source !== window.parent) return;   // 只认父 frame 的广播（顶层 parent 即自己）：第三方 iframe 不能关掉本层压暗
         topOff = !!e.data.off;
@@ -285,14 +307,16 @@
 
     // ===== 菜单：亮度调整 =====
     GM_registerMenuCommand('🔆 全站文字亮度', () => {
-        const pending = GM_getValue(PENDING_KEY, []);
-        if (!pending.includes(host)) {
-            pending.push(host);
-            GM_setValue(PENDING_KEY, pending);
+        // 菜单点击会送到每个 frame：子 frame 只报名，登记与写存储都由顶层做（否则会互相覆盖）
+        if (window.top !== window.self) {
+            try { window.top.postMessage({ t: HOST_MSG, host: host }, '*'); } catch (e) {}
+            return;
         }
-        if (window.top === window.self) {
-            setTimeout(showOverlay, 800);
-        }
+        // 窗口开着（800 ms 内再点）：合并，别清掉已登记的 frame host
+        if (!hostWinTimer) pendingHosts = [];
+        if (pendingHosts.length < 50 && !pendingHosts.includes(host)) pendingHosts.push(host);
+        clearTimeout(hostWinTimer);
+        hostWinTimer = setTimeout(flushHosts, HOST_WIN);
     });
 
     // ===== 菜单：本页压暗开关 =====
